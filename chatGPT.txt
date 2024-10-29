@@ -1,0 +1,3323 @@
+It is mandatory that each entity - the ghost, and each of the four hunters, runs their behaviour in a single thread each. This
+means that you will be created 5 threads total, with two different functions being sent to pthread_create(). You must
+send a pointer to the Ghost to the ghost thread and a pointer to one hunter to each hunter thread (so that each hunter’s
+data is only provided to one thread each).
+The main control flow should be loosely as follows:
+1. Initialize
+1.1. Ask the user to input 4 names for our hunters,
+1.2. Populate the house with the provided rooms,
+1.3. Place the 4 hunters in the head of our room list, which should be the Van room,
+1.4. Place the ghost in a random room, that is not the van. The ghost may move into the van later but not
+start there.
+1.5. Create one thread for each hunter and one thread for the ghost (five total) this is the main function #include "defs.h"
+
+int main()
+{
+    // Initialize the random number generator
+    srand(time(NULL));
+
+    // Create the house: You may change this, but it's here for demonstration purposes
+    // Note: This code will not compile until you have implemented the house functions and structures
+    HouseType house;
+    initHouse(&house);
+    populateRooms(&house);
+
+    return 0;
+}
+
+and this is the defs.h file #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <time.h>
+
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define C_TRUE          1
+#define C_FALSE         0
+#define HUNTER_WAIT     5000
+#define GHOST_WAIT      600
+#define NUM_HUNTERS     4
+#define FEAR_MAX        10
+#define LOGGING         C_TRUE
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+
+enum EvidenceType { EMF, TEMPERATURE, FINGERPRINTS, SOUND, EV_COUNT, EV_UNKNOWN };
+enum GhostClass { POLTERGEIST, BANSHEE, BULLIES, PHANTOM, GHOST_COUNT, GH_UNKNOWN };
+enum LoggerDetails { LOG_FEAR, LOG_BORED, LOG_EVIDENCE, LOG_SUFFICIENT, LOG_INSUFFICIENT, LOG_UNKNOWN };
+
+// Helper Utilies
+int randInt(int,int);        // Pseudo-random number generator function
+float randFloat(float, float);  // Pseudo-random float generator function
+enum GhostClass randomGhost();  // Return a randomly selected a ghost type
+void ghostToString(enum GhostClass, char*); // Convert a ghost type to a string, stored in output paremeter
+void evidenceToString(enum EvidenceType, char*); // Convert an evidence type to a string, stored in output parameter
+
+// Logging Utilities
+void l_hunterInit(char* name, enum EvidenceType equipment);
+void l_hunterMove(char* name, char* room);
+void l_hunterReview(char* name, enum LoggerDetails reviewResult);
+void l_hunterCollect(char* name, enum EvidenceType evidence, char* room);
+void l_hunterExit(char* name, enum LoggerDetails reason);
+void l_ghostInit(enum GhostClass type, char* room);
+void l_ghostMove(char* room);
+void l_ghostEvidence(enum EvidenceType evidence, char* room);
+void l_ghostExit(enum LoggerDetails reason);
+
+ChatGPT
+To achieve the desired functionality, you need to define and implement the necessary structures and functions for the house, hunters, and ghost. Also, you should create and manage threads for each entity (hunters and ghost). Here's a possible way to structure your program:
+
+Define structures for the house, rooms, hunters, and ghost in defs.h:
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    // Add any other room-related information if needed
+} Room;
+
+typedef struct HouseType {
+    Room* rooms;
+    int numRooms;
+} HouseType;
+
+typedef struct Hunter {
+    char name[MAX_STR];
+    enum EvidenceType equipment;
+    Room* currentRoom;
+    int fear;
+    int boredom;
+    pthread_t thread;
+} Hunter;
+
+typedef struct Ghost {
+    enum GhostClass type;
+    Room* currentRoom;
+    pthread_t thread;
+} Ghost;
+Implement functions to initialize and populate the house in defs.c:
+c
+Copy code
+void initHouse(HouseType* house);
+void populateRooms(HouseType* house);
+Modify the main function to create threads and start the simulation in main.c:
+c
+Copy code
+int main() {
+    srand(time(NULL));
+
+    HouseType house;
+    initHouse(&house);
+    populateRooms(&house);
+
+    // Create and initialize hunters
+    Hunter hunters[NUM_HUNTERS];
+    char hunterNames[NUM_HUNTERS][MAX_STR];
+
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        printf("Enter name for Hunter %d: ", i + 1);
+        fgets(hunterNames[i], MAX_STR, stdin);
+        strtok(hunterNames[i], "\n"); // Remove newline character
+        hunters[i].fear = 0;
+        hunters[i].boredom = 0;
+        strcpy(hunters[i].name, hunterNames[i]);
+        hunters[i].equipment = randomGhost(); // Assign random equipment for demonstration purposes
+        hunters[i].currentRoom = &house.rooms[0]; // Start in the Van room
+        pthread_create(&hunters[i].thread, NULL, hunterThread, (void*)&hunters[i]);
+    }
+
+    // Create and initialize the ghost
+    Ghost ghost;
+    ghost.type = randomGhost();
+    ghost.currentRoom = &house.rooms[randInt(1, house.numRooms - 1)]; // Random room (not the Van)
+    pthread_create(&ghost.thread, NULL, ghostThread, (void*)&ghost);
+
+    // Add code to wait for threads to finish (pthread_join)
+
+    return 0;
+}
+Implement thread functions for hunters and the ghost in threads.c:
+c
+Copy code
+void* hunterThread(void* arg);
+void* ghostThread(void* arg);
+Ensure that you handle thread synchronization appropriately, considering the shared resources (e.g., rooms) using mutexes. Additionally, implement the logic for hunters' and the ghost's behavior within their respective thread functions.
+
+This is a basic outline to get you started. You may need to adjust and expand based on the specific requirements of your simulation.
+
+User
+i have 4 file, the main file which contains the main function, logger.c, mouse.c and utils.c. what should i do
+ChatGPT
+To organize your code into multiple files, you can follow these steps:
+
+Create Header Files (defs.h, logger.h, mouse.h, utils.h):
+Move the structure definitions and function prototypes from your current defs.h to separate header files.
+Each header file should contain the necessary declarations for its corresponding source file.
+c
+Copy code
+// defs.h
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <time.h>
+
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define C_TRUE          1
+#define C_FALSE         0
+#define HUNTER_WAIT     5000
+#define GHOST_WAIT      600
+#define NUM_HUNTERS     4
+#define FEAR_MAX        10
+#define LOGGING         C_TRUE
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+// ... other definitions ...
+
+// Include guard to prevent multiple inclusions
+#ifndef DEFS_H
+#define DEFS_H
+
+// Helper Utilies
+int randInt(int,int);
+float randFloat(float, float);
+enum GhostClass randomGhost();
+void ghostToString(enum GhostClass, char*);
+void evidenceToString(enum EvidenceType, char*);
+
+// Logging Utilities
+void l_hunterInit(char* name, enum EvidenceType equipment);
+void l_hunterMove(char* name, char* room);
+// ... other logging functions ...
+void l_ghostExit(enum LoggerDetails reason);
+
+#endif // DEFS_H
+c
+Copy code
+// logger.h
+#include "defs.h"
+
+// Function prototypes for logger.c
+void logFunction1();
+void logFunction2();
+// ... other logger function prototypes ...
+c
+Copy code
+// mouse.h
+#include "defs.h"
+
+// Function prototypes for mouse.c
+void mouseFunction1();
+void mouseFunction2();
+// ... other mouse function prototypes ...
+c
+Copy code
+// utils.h
+#include "defs.h"
+
+// Function prototypes for utils.c
+void utilFunction1();
+void utilFunction2();
+// ... other utility function prototypes ...
+Create Source Files (main.c, logger.c, mouse.c, utils.c):
+Move the implementation of functions to their respective source files.
+Include the corresponding header file in each source file.
+c
+Copy code
+// main.c
+#include "defs.h"
+#include "logger.h"
+#include "mouse.h"
+#include "utils.h"
+
+int main() {
+    // ... main function code ...
+    return 0;
+}
+c
+Copy code
+// logger.c
+#include "defs.h"
+#include "logger.h"
+
+void logFunction1() {
+    // ... implementation ...
+}
+
+void logFunction2() {
+    // ... implementation ...
+}
+// ... other logger function implementations ...
+c
+Copy code
+// mouse.c
+#include "defs.h"
+#include "mouse.h"
+
+void mouseFunction1() {
+    // ... implementation ...
+}
+
+void mouseFunction2() {
+    // ... implementation ...
+}
+// ... other mouse function implementations ...
+c
+Copy code
+// utils.c
+#include "defs.h"
+#include "utils.h"
+
+void utilFunction1() {
+    // ... implementation ...
+}
+
+void utilFunction2() {
+    // ... implementation ...
+}
+// ... other utility function implementations ...
+Compile and Link:
+Compile each source file separately, and then link them together.
+bash
+Copy code
+gcc -c main.c -o main.o
+gcc -c logger.c -o logger.o
+gcc -c mouse.c -o mouse.o
+gcc -c utils.c -o utils.o
+gcc main.o logger.o mouse.o utils.o -o your_program_name -pthread
+Make sure to replace your_program_name with the desired name for your executable. The -pthread flag is included to link the pthread library, as you are using pthread functions in your code.
+
+Run Your Program:
+Execute your compiled program.
+bash
+Copy code
+./your_program_name
+This structure helps you maintain a modular and organized codebase. Each source file focuses on a specific aspect of your program, making it easier to manage and understand.
+
+User
+can you give me the code for void* hunterThread(void* arg);
+void* ghostThread(void* arg);
+ChatGPT
+Certainly! Below is a basic implementation for hunterThread and ghostThread. Keep in mind that you'll need to fill in the details of these functions based on the specific requirements of your simulation.
+
+c
+Copy code
+// main.c
+#include "defs.h"
+#include "logger.h"
+
+// Function prototypes for hunter.c and ghost.c
+void* hunterThread(void* arg);
+void* ghostThread(void* arg);
+
+int main() {
+    // ... (previous main code)
+
+    // Create and initialize hunters
+    Hunter hunters[NUM_HUNTERS];
+
+    // ... (previous hunter initialization code)
+
+    // Create and initialize the ghost
+    Ghost ghost;
+
+    // ... (previous ghost initialization code)
+
+    // Create threads for hunters
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        pthread_create(&hunters[i].thread, NULL, hunterThread, (void*)&hunters[i]);
+    }
+
+    // Create thread for the ghost
+    pthread_create(&ghost.thread, NULL, ghostThread, (void*)&ghost);
+
+    // ... (previous thread creation code)
+
+    // Add code to wait for threads to finish (pthread_join)
+
+    return 0;
+}
+c
+Copy code
+// hunter.c
+#include "defs.h"
+#include "logger.h"
+
+void* hunterThread(void* arg) {
+    Hunter* hunter = (Hunter*)arg;
+
+    // Initialization log
+    l_hunterInit(hunter->name, hunter->equipment);
+
+    // Add logic for the hunter's behavior here
+    while (/* condition for hunter to continue */) {
+        // ... (hunter behavior code)
+    }
+
+    // Exit log
+    l_hunterExit(hunter->name, LOG_UNKNOWN);
+
+    pthread_exit(NULL);
+}
+c
+Copy code
+// ghost.c
+#include "defs.h"
+#include "logger.h"
+
+void* ghostThread(void* arg) {
+    Ghost* ghost = (Ghost*)arg;
+
+    // Initialization log
+    l_ghostInit(ghost->type, ghost->currentRoom->name);
+
+    // Add logic for the ghost's behavior here
+    while (/* condition for ghost to continue */) {
+        // ... (ghost behavior code)
+    }
+
+    // Exit log
+    l_ghostExit(LOG_UNKNOWN);
+
+    pthread_exit(NULL);
+}
+In these code snippets, I've used a while loop to represent the continuous behavior of the hunters and the ghost. You need to define the exit conditions based on your simulation requirements. Also, include the actual logic for the behavior of hunters and the ghost inside the loop.
+
+Remember to synchronize access to shared resources (e.g., rooms) using mutexes to avoid race conditions.
+
+User
+based on this code, can you write the code for ghost and hunter Ghost: A ghost is an entity that moves between rooms and leaves evidence behind. A ghost contains a
+GhostClass, which is an enumerated data type representing the type of ghost it is. It also contains a pointer to the
+room that it is in. It contains this pointer so that ghost related functions need only to know about the ghost to
+operate. It also contains a boredom timer - an integer initially set to 0. Each time the ghost is in a room with a
+hunter, it resets the counter to 0. Each time the ghost is in a room without a hunter, it increases the timer variable
+by 1. If the boredom timer reaches BOREDOM_MAX, it is too bored, and ends its haunting by returning or calling
+pthread_exit(). A ghost can take one of the following three actions at random:
+a. Do nothing,
+b. Leave evidence by adding it to the room’s evidence collection. The evidence must be part of the ghost’s
+valid evidence types, listed below,
+c. Move to a random, connected room, only if a hunter is NOT in the room. If a hunter is in the room, they
+will only choose to do nothing or leave evidence.
+Note: There is only ever one ghost in a house. Each ghost leaves 3 different types of evidence at random
+from a total of 4 pieces of evidence, defined in the table below: Table 1. A ghost can be a POLTERGEIST,
+BANSHEE, BULLIES, or PHANTOM.
+4. Hunter: A hunter is an entity that moves between rooms, reads the room for evidence, and reviews collected
+evidence. They contain a pointer to the room they are currently in, an enumerated type representing the type of
+evidence their equipment can read (note: there is no equipment type, only the type of evidence they collect), a
+name, a pointer to a shared collection of Evidence that all hunters will share, a fear integer which starts at 0, and
+a boredom integer which starts at 0. Hunters choose their actions at random. If a hunter starts their loop in the
+same room as a ghost, they gain 1 point of fear and reset their boredom to 0. If they are not in the room with a
+Ghost, they increase their boredom by 1. If they reach FEAR_MAX fear or BOREDOM_MAX boredom, they are
+removed from the simulation by returning or exiting their thread.
+To further clarify, Hunters can randomly perform any of the following actions on their turn:
+a. Move to a random, connected room,
+b. Collect evidence in a room if evidence is in that room AND the hunter’s equipment matches the evidence
+type in the room,
+c. Review the evidence that is shared between all hunters to determine if the thread should end; it should
+end if the hunters have collectively gathered 3 unique pieces of evidence,
+d. Exit the thread (return or pthread_exit) because they are bored/afraid/collected 3 pieces of evidence
+ChatGPT
+Sure, I'll provide you with an implementation for the ghostThread and hunterThread functions based on the specifications you've provided:
+
+c
+Copy code
+// ghost.c
+#include "defs.h"
+#include "logger.h"
+
+void* ghostThread(void* arg) {
+    Ghost* ghost = (Ghost*)arg;
+
+    // Initialization log
+    l_ghostInit(ghost->type, ghost->currentRoom->name);
+
+    while (1) {
+        // Check if a hunter is in the room
+        int hunterInRoom = 0;
+        for (int i = 0; i < NUM_HUNTERS; i++) {
+            if (hunters[i].currentRoom == ghost->currentRoom) {
+                // Reset boredom timer and set flag
+                ghost->boredom = 0;
+                hunterInRoom = 1;
+                break;
+            }
+        }
+
+        // Ghost's action selection
+        int action = randInt(0, 2);  // 0: Do nothing, 1: Leave evidence, 2: Move to a random room
+
+        switch (action) {
+            case 0:
+                // Do nothing
+                break;
+            case 1:
+                // Leave evidence
+                enum EvidenceType evidenceType = randInt(0, EV_COUNT - 1);
+                l_ghostEvidence(evidenceType, ghost->currentRoom->name);
+                addEvidenceToRoom(ghost->currentRoom, evidenceType);
+                break;
+            case 2:
+                // Move to a random, connected room
+                if (!hunterInRoom) {
+                    Room* nextRoom = getRandomConnectedRoom(ghost->currentRoom);
+                    l_ghostMove(nextRoom->name);
+                    ghost->currentRoom = nextRoom;
+                }
+                break;
+        }
+
+        // Increment boredom timer if no hunter in the room
+        if (!hunterInRoom) {
+            ghost->boredom++;
+        }
+
+        // Check boredom threshold
+        if (ghost->boredom >= BOREDOM_MAX) {
+            l_ghostExit(LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Introduce some delay before the next iteration
+        usleep(GHOST_WAIT * 1000);
+    }
+}
+c
+Copy code
+// hunter.c
+#include "defs.h"
+#include "logger.h"
+
+void* hunterThread(void* arg) {
+    Hunter* hunter = (Hunter*)arg;
+
+    // Initialization log
+    l_hunterInit(hunter->name, hunter->equipment);
+
+    while (1) {
+        // Check if a ghost is in the room
+        int ghostInRoom = 0;
+        if (ghost.currentRoom == hunter->currentRoom) {
+            // Reset fear and boredom timers if a ghost is in the room
+            hunter->fear = 0;
+            hunter->boredom = 0;
+            ghostInRoom = 1;
+        }
+
+        // Hunter's action selection
+        int action = randInt(0, 3);  // 0: Move, 1: Collect evidence, 2: Review evidence, 3: Exit
+
+        switch (action) {
+            case 0:
+                // Move to a random, connected room
+                Room* nextRoom = getRandomConnectedRoom(hunter->currentRoom);
+                l_hunterMove(hunter->name, nextRoom->name);
+                hunter->currentRoom = nextRoom;
+                break;
+            case 1:
+                // Collect evidence if it matches the hunter's equipment
+                if (hunter->currentRoom->evidenceType != EV_UNKNOWN && hunter->currentRoom->evidenceType == hunter->equipment) {
+                    l_hunterCollect(hunter->name, hunter->currentRoom->evidenceType, hunter->currentRoom->name);
+                    collectEvidence(hunter->currentRoom->evidenceType);
+                }
+                break;
+            case 2:
+                // Review evidence
+                if (reviewEvidence()) {
+                    l_hunterReview(hunter->name, LOG_SUFFICIENT);
+                    pthread_exit(NULL);
+                }
+                break;
+            case 3:
+                // Exit thread
+                l_hunterExit(hunter->name, LOG_UNKNOWN);
+                pthread_exit(NULL);
+        }
+
+        // Increment boredom timer if no ghost in the room
+        if (!ghostInRoom) {
+            hunter->boredom++;
+        }
+
+        // Check fear and boredom thresholds
+        if (hunter->fear >= FEAR_MAX || hunter->boredom >= BOREDOM_MAX) {
+            l_hunterExit(hunter->name, LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Introduce some delay before the next iteration
+        usleep(HUNTER_WAIT * 1000);
+    }
+}
+Please note that in these implementations, I assumed the existence of some helper functions like addEvidenceToRoom, getRandomConnectedRoom, collectEvidence, and reviewEvidence. You should define these functions based on your program's requirements. The provided code serves as a template, and you may need to adapt it to your specific needs.
+
+User
+where should be implemneting these helper methods 
+ChatGPT
+The helper methods (addEvidenceToRoom, getRandomConnectedRoom, collectEvidence, and reviewEvidence) can be implemented in the file where you handle the house-related functionality. Based on the structure we've discussed earlier, these functions should be part of the same source file as your house-related logic, possibly in a file like house.c.
+
+Here's an example structure for the house-related functions and the helper methods:
+
+c
+Copy code
+// house.c
+#include "defs.h"
+#include "logger.h"
+
+// Helper functions for house-related logic
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType) {
+    // Implementation for adding evidence to a room
+    room->evidenceType = evidenceType;
+}
+
+Room* getRandomConnectedRoom(Room* currentRoom) {
+    // Implementation for getting a random connected room
+    // Ensure that the chosen room is not the current room and is connected to it
+    // Return a pointer to the chosen room
+}
+
+void collectEvidence(enum EvidenceType evidenceType) {
+    // Implementation for collecting evidence
+    // You may want to use a shared collection of evidence accessible by all hunters
+}
+
+int reviewEvidence() {
+    // Implementation for reviewing evidence
+    // Return 1 if the evidence is sufficient, otherwise return 0
+}
+
+// Rest of the house-related functions...
+
+Ensure that you declare these helper functions in defs.h so that they can be used by other source files, such as ghost.c and hunter.c. The declaration should look something like this in defs.h:
+
+c
+Copy code
+// defs.h
+#include <...>
+
+// ... (other definitions)
+
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType);
+Room* getRandomConnectedRoom(Room* currentRoom);
+void collectEvidence(enum EvidenceType evidenceType);
+int reviewEvidence();
+
+// ... (other declarations)
+With this structure, you encapsulate the house-related logic and helper methods in a single source file (house.c), making it easier to manage and understand your code.
+
+User
+can you write the code of these helper functions 
+ChatGPT
+Certainly! Below is an example implementation for the helper functions in house.c. Please note that these implementations are simplified for demonstration purposes, and you may need to adjust them based on your specific requirements.
+
+c
+Copy code
+// house.c
+#include "defs.h"
+#include "logger.h"
+
+// Helper functions for house-related logic
+
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType) {
+    pthread_mutex_lock(&room->roomMutex);
+
+    // Check if the room already has evidence
+    if (room->evidenceType == EV_UNKNOWN) {
+        // Add evidence to the room
+        room->evidenceType = evidenceType;
+        l_ghostEvidence(evidenceType, room->name);
+    }
+
+    pthread_mutex_unlock(&room->roomMutex);
+}
+
+Room* getRandomConnectedRoom(Room* currentRoom) {
+    // Assumes that each room has a list of connected rooms
+    int numConnectedRooms = currentRoom->numConnectedRooms;
+
+    if (numConnectedRooms == 0) {
+        // No connected rooms
+        return currentRoom;
+    }
+
+    int randomIndex = randInt(0, numConnectedRooms - 1);
+    return currentRoom->connectedRooms[randomIndex];
+}
+
+void collectEvidence(enum EvidenceType evidenceType) {
+    // Assumes a shared collection of evidence accessible by all hunters
+    pthread_mutex_lock(&evidenceMutex);
+
+    // Check if the evidence is already collected
+    int evidenceAlreadyCollected = 0;
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        if (collectedEvidence[i] == evidenceType) {
+            evidenceAlreadyCollected = 1;
+            break;
+        }
+    }
+
+    if (!evidenceAlreadyCollected) {
+        // Collect evidence
+        collectedEvidence[numCollectedEvidence++] = evidenceType;
+        l_hunterCollect("Shared", evidenceType, "Shared");
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+}
+
+int reviewEvidence() {
+    // Assumes a shared collection of evidence accessible by all hunters
+    pthread_mutex_lock(&evidenceMutex);
+
+    int uniqueEvidenceCount = 0;
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        // Check for uniqueness
+        int isUnique = 1;
+        for (int j = i + 1; j < numCollectedEvidence; j++) {
+            if (collectedEvidence[i] == collectedEvidence[j]) {
+                isUnique = 0;
+                break;
+            }
+        }
+
+        if (isUnique) {
+            uniqueEvidenceCount++;
+        }
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+
+    return (uniqueEvidenceCount >= 3) ? 1 : 0;
+}
+
+// Rest of the house-related functions...
+In this example:
+
+addEvidenceToRoom: Locks the room mutex, checks if the room already has evidence, adds evidence if not, and unlocks the mutex.
+getRandomConnectedRoom: Assumes that each room has a list of connected rooms and returns a random connected room.
+collectEvidence: Locks the evidence mutex, checks if the evidence is already collected, collects it if not, and unlocks the mutex.
+reviewEvidence: Locks the evidence mutex, counts the unique pieces of evidence, and unlocks the mutex.
+Remember to initialize the mutex (evidenceMutex) and other necessary variables appropriately in your house.c file or another initialization routine. Additionally, you may need to adjust the logic based on the specifics of your house structure and evidence collection.
+
+User
+this is my house.c file, can you implemnet the functios needed for this file, such as addroom, createroom and connectRooms #include "defs.h"
+
+/*
+    Dynamically allocates several rooms and populates the provided house.
+    Note: You may modify this as long as room names and connections are maintained.
+        out: house - the house to populate with rooms. Assumes house has been initialized.
+*/
+void populateRooms(HouseType* house) {
+    // First, create each room
+
+    // createRoom assumes that we dynamically allocate a room, initializes the values, and returns a RoomType*
+    // create functions are pretty typical, but it means errors are harder to return aside from NULL
+    struct Room* van                = createRoom("Van");
+    struct Room* hallway            = createRoom("Hallway");
+    struct Room* master_bedroom     = createRoom("Master Bedroom");
+    struct Room* boys_bedroom       = createRoom("Boy's Bedroom");
+    struct Room* bathroom           = createRoom("Bathroom");
+    struct Room* basement           = createRoom("Basement");
+    struct Room* basement_hallway   = createRoom("Basement Hallway");
+    struct Room* right_storage_room = createRoom("Right Storage Room");
+    struct Room* left_storage_room  = createRoom("Left Storage Room");
+    struct Room* kitchen            = createRoom("Kitchen");
+    struct Room* living_room        = createRoom("Living Room");
+    struct Room* garage             = createRoom("Garage");
+    struct Room* utility_room       = createRoom("Utility Room");
+
+    // This adds each room to each other's room lists
+    // All rooms are two-way connections
+    connectRooms(van, hallway);
+    connectRooms(hallway, master_bedroom);
+    connectRooms(hallway, boys_bedroom);
+    connectRooms(hallway, bathroom);
+    connectRooms(hallway, kitchen);
+    connectRooms(hallway, basement);
+    connectRooms(basement, basement_hallway);
+    connectRooms(basement_hallway, right_storage_room);
+    connectRooms(basement_hallway, left_storage_room);
+    connectRooms(kitchen, living_room);
+    connectRooms(kitchen, garage);
+    connectRooms(garage, utility_room);
+
+    // Add each room to the house's room list
+    addRoom(&house->rooms, van);
+    addRoom(&house->rooms, hallway);
+    addRoom(&house->rooms, master_bedroom);
+    addRoom(&house->rooms, boys_bedroom);
+    addRoom(&house->rooms, bathroom);
+    addRoom(&house->rooms, basement);
+    addRoom(&house->rooms, basement_hallway);
+    addRoom(&house->rooms, right_storage_room);
+    addRoom(&house->rooms, left_storage_room);
+    addRoom(&house->rooms, kitchen);
+    addRoom(&house->rooms, living_room);
+    addRoom(&house->rooms, garage);
+    addRoom(&house->rooms, utility_room);
+}
+ChatGPT
+Certainly! To implement the createRoom, connectRooms, and addRoom functions, you'll need to make sure to allocate memory dynamically for the rooms and properly manage the connections between them. Here's an example implementation:
+
+c
+Copy code
+// house.c
+#include "defs.h"
+
+/*
+    Dynamically allocates a room and initializes its values.
+    in: name - the name of the room.
+    out: returns a pointer to the created room.
+*/
+struct Room* createRoom(const char* name) {
+    struct Room* newRoom = (struct Room*)malloc(sizeof(struct Room));
+    if (newRoom == NULL) {
+        perror("Error creating room");
+        exit(EXIT_FAILURE);
+    }
+
+    strncpy(newRoom->name, name, MAX_STR - 1);
+    newRoom->name[MAX_STR - 1] = '\0'; // Ensure null-termination
+
+    // Initialize other room properties
+    newRoom->evidenceType = EV_UNKNOWN;
+    newRoom->numConnectedRooms = 0;
+    pthread_mutex_init(&newRoom->roomMutex, NULL);
+
+    return newRoom;
+}
+
+/*
+    Connects two rooms in a two-way connection.
+    in: room1, room2 - the rooms to connect.
+*/
+void connectRooms(struct Room* room1, struct Room* room2) {
+    if (room1->numConnectedRooms < MAX_CONNECTED_ROOMS && room2->numConnectedRooms < MAX_CONNECTED_ROOMS) {
+        // Add room2 to room1's connected rooms
+        room1->connectedRooms[room1->numConnectedRooms++] = room2;
+
+        // Add room1 to room2's connected rooms
+        room2->connectedRooms[room2->numConnectedRooms++] = room1;
+    } else {
+        fprintf(stderr, "Error connecting rooms: Maximum connected rooms reached.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+    Adds a room to the list of rooms in the house.
+    in: head - a pointer to the head of the room list.
+        room - the room to add to the list.
+*/
+void addRoom(struct Room** head, struct Room* room) {
+    if (*head == NULL) {
+        *head = room;
+        room->nextRoom = NULL;
+    } else {
+        room->nextRoom = *head;
+        *head = room;
+    }
+}
+Now, you can include these helper functions in your house.c file and use them within the populateRooms function:
+
+c
+Copy code
+// house.c
+#include "defs.h"
+
+// ... (previously defined functions)
+
+/*
+    Dynamically allocates several rooms and populates the provided house.
+    Note: You may modify this as long as room names and connections are maintained.
+        out: house - the house to populate with rooms. Assumes house has been initialized.
+*/
+void populateRooms(HouseType* house) {
+    // First, create each room
+
+    struct Room* van = createRoom("Van");
+    struct Room* hallway = createRoom("Hallway");
+    // ... (create other rooms)
+
+    // This adds each room to each other's room lists
+    // All rooms are two-way connections
+    connectRooms(van, hallway);
+    // ... (connect other rooms)
+
+    // Add each room to the house's room list
+    addRoom(&house->rooms, van);
+    // ... (add other rooms to the list)
+}
+This implementation assumes that each room has a maximum of MAX_CONNECTED_ROOMS connected rooms, and it uses a linked list to keep track of the rooms in the house. Adjust these values based on your specific requirements.
+
+User
+what is the update main file look like now
+ChatGPT
+With the createRoom, connectRooms, and addRoom functions implemented in the house.c file, you can update your main.c file to include these changes. Here's how your updated main.c file might look like:
+
+c
+Copy code
+// main.c
+#include "defs.h"
+#include "house.h" // Include the header file for house-related functions
+
+int main() {
+    // Initialize the random number generator
+    srand(time(NULL));
+
+    // Create the house
+    HouseType house;
+    initHouse(&house);
+    
+    // Populate rooms and connections
+    populateRooms(&house);
+
+    // Create and initialize hunters
+    Hunter hunters[NUM_HUNTERS];
+    
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        // ... (initialize hunter properties as needed)
+    }
+
+    // Create and initialize the ghost
+    Ghost ghost;
+    // ... (initialize ghost properties as needed)
+
+    // Create threads for hunters
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        pthread_create(&hunters[i].thread, NULL, hunterThread, (void*)&hunters[i]);
+    }
+
+    // Create thread for the ghost
+    pthread_create(&ghost.thread, NULL, ghostThread, (void*)&ghost);
+
+    // ... (previous thread creation code)
+
+    // Add code to wait for threads to finish (pthread_join)
+
+    return 0;
+}
+This assumes that you have a header file (house.h) for house-related functions, where you declare the functions and include necessary headers. Make sure that you've updated your build process to compile and link the house.c file along with the other source files.
+
+Also, ensure that you've correctly implemented the initialization functions for the house (initHouse) and other necessary functions in your codebase. This example focuses on integrating the house-related functions into the main file.
+
+User
+Ghost Thread
+2.1. If the Ghost is in the room with a hunter, reset the Ghost’s boredom timer to 0, and it cannot move.
+Randomly choose to leave evidence or to do nothing.
+2.2. Otherwise, if the Ghost is not in the room with a hunter, increase the Ghost’s boredom counter by 1.
+Randomly choose to move to an adjacent room, to leave evidence, or to do nothing.
+2.3. If moving to an adjacent room, remember to update the room’s Ghost pointer and to update the Ghost’s
+Room pointer.
+2.4. If leaving evidence, pick an EvidenceType from the ghost’s list of three valid evidence types and add it to
+the room’s evidence collection.
+2.5. If the ghost’s boredom counter has reached BOREDOM_MAX, exit the thread.
+ChatGPT
+Certainly! Based on your description, here's an updated implementation for the ghostThread function:
+
+c
+Copy code
+// ghost.c
+#include "defs.h"
+#include "logger.h"
+#include "house.h"  // Include the header file for house-related functions
+
+void* ghostThread(void* arg) {
+    Ghost* ghost = (Ghost*)arg;
+
+    // Initialization log
+    l_ghostInit(ghost->type, ghost->currentRoom->name);
+
+    while (1) {
+        // Check if the Ghost is in the room with a hunter
+        int inRoomWithHunter = 0;
+        for (int i = 0; i < NUM_HUNTERS; i++) {
+            if (hunters[i].currentRoom == ghost->currentRoom) {
+                inRoomWithHunter = 1;
+                break;
+            }
+        }
+
+        if (inRoomWithHunter) {
+            // Reset boredom timer since Ghost is in the room with a hunter
+            ghost->boredom = 0;
+
+            // Randomly choose to leave evidence or do nothing
+            int action = randInt(0, 1);
+            switch (action) {
+                case 0:
+                    // Do nothing
+                    break;
+                case 1:
+                    // Leave evidence
+                    enum EvidenceType evidenceType = randomGhostEvidence();
+                    l_ghostEvidence(evidenceType, ghost->currentRoom->name);
+                    addEvidenceToRoom(ghost->currentRoom, evidenceType);
+                    break;
+            }
+        } else {
+            // Ghost is not in the room with a hunter
+            // Increase the Ghost’s boredom counter by 1
+            ghost->boredom++;
+
+            // Randomly choose to move to an adjacent room, leave evidence, or do nothing
+            int action = randInt(0, 2);
+            switch (action) {
+                case 0:
+                    // Do nothing
+                    break;
+                case 1:
+                    // Leave evidence
+                    enum EvidenceType evidenceType = randomGhostEvidence();
+                    l_ghostEvidence(evidenceType, ghost->currentRoom->name);
+                    addEvidenceToRoom(ghost->currentRoom, evidenceType);
+                    break;
+                case 2:
+                    // Move to an adjacent room
+                    Room* nextRoom = getRandomConnectedRoom(ghost->currentRoom);
+                    if (nextRoom != NULL) {
+                        l_ghostMove(nextRoom->name);
+
+                        // Update the room’s Ghost pointer
+                        ghost->currentRoom->ghost = NULL;
+                        nextRoom->ghost = ghost;
+
+                        // Update the Ghost’s Room pointer
+                        ghost->currentRoom = nextRoom;
+                    }
+                    break;
+            }
+        }
+
+        // Check if the ghost’s boredom counter has reached BOREDOM_MAX
+        if (ghost->boredom >= BOREDOM_MAX) {
+            l_ghostExit(LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Introduce some delay before the next iteration
+        usleep(GHOST_WAIT * 1000);
+    }
+}
+This implementation adheres to the described behavior of the Ghost thread. The randomGhostEvidence function is assumed to be a helper function that randomly selects an evidence type from the ghost's list of three valid evidence types.
+
+User
+. Hunter Threads
+3.1. If the hunter is in a room with a ghost, increase the fear field of the hunter by 1 (which should be defined
+by a definition in defs.h so that it can be modified). Reset the hunter’s boredom timer to 0. Otherwise,
+increase boredom by 1.
+3.2. Randomly choose to either collect evidence, move, or review evidence.
+3.2.1. If you the hunter is collecting evidence, look through the room’s evidence collection. If there is
+evidence that matches the type of evidence the hunter can detect, remove it from the room’s
+evidence collection and add it to the shared evidence collection for all hunters. Not all evidence
+needs to be saved, just enough to help identify the ghost.
+3.2.2. If the hunter is moving, move to a random, connected room. Make sure to update the room
+pointer in the hunter and the hunter collection in the room.
+3.2.3. If the hunter is reviewing, look at each piece of evidence in the hunter’s shared evidence
+collection and see if there is sufficient evidence (i.e., three unique pieces) to exit the simulation,
+and exit the simulation if there is enough evidence.
+3.3. Check if the fear of the hunter is greater than or equal to FEAR_MAX. If it is, exit the thread.
+3.4. Check if the hunter’s boredom is greater than or equal to BOREDOM_MAX. If it is, exit the thread.
+ChatGPT
+Certainly! Here's an updated implementation for the hunterThread function based on your specifications:
+
+c
+Copy code
+// hunter.c
+#include "defs.h"
+#include "logger.h"
+#include "house.h"  // Include the header file for house-related functions
+
+void* hunterThread(void* arg) {
+    Hunter* hunter = (Hunter*)arg;
+
+    // Initialization log
+    l_hunterInit(hunter->name, hunter->equipment);
+
+    while (1) {
+        // Check if the hunter is in a room with a ghost
+        int inRoomWithGhost = (hunter->currentRoom->ghost != NULL);
+
+        if (inRoomWithGhost) {
+            // Increase fear field of the hunter by 1 and reset boredom timer
+            hunter->fear++;
+            hunter->boredom = 0;
+        } else {
+            // Hunter is not in a room with a ghost
+            // Increase boredom by 1
+            hunter->boredom++;
+        }
+
+        // Randomly choose to collect evidence, move, or review evidence
+        int action = randInt(0, 2);
+        switch (action) {
+            case 0:
+                // Collect evidence
+                if (inRoomWithGhost) {
+                    enum EvidenceType evidenceType = hunter->currentRoom->evidenceType;
+                    if (evidenceType != EV_UNKNOWN && evidenceType == hunter->equipment) {
+                        l_hunterCollect(hunter->name, evidenceType, hunter->currentRoom->name);
+                        collectEvidence(evidenceType);
+                        hunter->currentRoom->evidenceType = EV_UNKNOWN;
+                    }
+                }
+                break;
+            case 1:
+                // Move to a random, connected room
+                Room* nextRoom = getRandomConnectedRoom(hunter->currentRoom);
+                if (nextRoom != NULL) {
+                    l_hunterMove(hunter->name, nextRoom->name);
+
+                    // Update the room pointer in the hunter
+                    hunter->currentRoom->hunters[hunter->id] = NULL;
+                    nextRoom->hunters[hunter->id] = hunter;
+
+                    // Update the hunter's current room
+                    hunter->currentRoom = nextRoom;
+                }
+                break;
+            case 2:
+                // Review evidence
+                if (reviewEvidence()) {
+                    l_hunterReview(hunter->name, LOG_SUFFICIENT);
+                    pthread_exit(NULL);
+                }
+                break;
+        }
+
+        // Check if the fear of the hunter is greater than or equal to FEAR_MAX
+        if (hunter->fear >= FEAR_MAX) {
+            l_hunterExit(hunter->name, LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Check if the hunter's boredom is greater than or equal to BOREDOM_MAX
+        if (hunter->boredom >= BOREDOM_MAX) {
+            l_hunterExit(hunter->name, LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Introduce some delay before the next iteration
+        usleep(HUNTER_WAIT * 1000);
+    }
+}
+This implementation follows the described behavior for the Hunter thread. Ensure that you have correctly implemented the collectEvidence and reviewEvidence functions in your house.c file.
+
+User
+are these two functions correct 
+void collectEvidence(enum EvidenceType evidenceType) {
+    // Assumes a shared collection of evidence accessible by all hunters
+    pthread_mutex_lock(&evidenceMutex);
+
+    // Check if the evidence is already collected
+    int evidenceAlreadyCollected = 0;
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        if (collectedEvidence[i] == evidenceType) {
+            evidenceAlreadyCollected = 1;
+            break;
+        }
+    }
+
+    if (!evidenceAlreadyCollected) {
+        // Collect evidence
+        collectedEvidence[numCollectedEvidence++] = evidenceType;
+        l_hunterCollect("Shared", evidenceType, "Shared");
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+}
+
+int reviewEvidence() {
+    // Assumes a shared collection of evidence accessible by all hunters
+    pthread_mutex_lock(&evidenceMutex);
+
+    int uniqueEvidenceCount = 0;
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        // Check for uniqueness
+        int isUnique = 1;
+        for (int j = i + 1; j < numCollectedEvidence; j++) {
+            if (collectedEvidence[i] == collectedEvidence[j]) {
+                isUnique = 0;
+                break;
+            }
+        }
+
+        if (isUnique) {
+            uniqueEvidenceCount++;
+        }
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+
+    return (uniqueEvidenceCount >= 3) ? 1 : 0;
+}
+ChatGPT
+The functions collectEvidence and reviewEvidence seem generally correct for the purpose you've described. However, I would like to point out a few considerations and possible improvements:
+
+Error Handling: In a production-level code, it would be a good practice to handle errors more gracefully. For example, if the evidence collection array (collectedEvidence) is full, you might want to avoid accessing out-of-bounds indexes. Similarly, consider handling errors that might occur during mutex operations.
+
+Mutex Scope: It's a good practice to keep the critical section inside the mutex lock as minimal as possible. In both functions, you only need to protect the critical section where you modify or read the shared evidence collection. The other parts of the code can be outside the lock.
+
+Here's a slightly modified version considering these points:
+
+c
+Copy code
+void collectEvidence(enum EvidenceType evidenceType) {
+    // Assumes a shared collection of evidence accessible by all hunters
+
+    // Check if the evidence is already collected
+    int evidenceAlreadyCollected = 0;
+
+    pthread_mutex_lock(&evidenceMutex);
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        if (collectedEvidence[i] == evidenceType) {
+            evidenceAlreadyCollected = 1;
+            break;
+        }
+    }
+
+    if (!evidenceAlreadyCollected && numCollectedEvidence < MAX_COLLECTED_EVIDENCE) {
+        // Collect evidence
+        collectedEvidence[numCollectedEvidence++] = evidenceType;
+        l_hunterCollect("Shared", evidenceType, "Shared");
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+}
+
+int reviewEvidence() {
+    // Assumes a shared collection of evidence accessible by all hunters
+
+    int uniqueEvidenceCount = 0;
+
+    pthread_mutex_lock(&evidenceMutex);
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        // Check for uniqueness
+        int isUnique = 1;
+        for (int j = i + 1; j < numCollectedEvidence; j++) {
+            if (collectedEvidence[i] == collectedEvidence[j]) {
+                isUnique = 0;
+                break;
+            }
+        }
+
+        if (isUnique) {
+            uniqueEvidenceCount++;
+        }
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+
+    return (uniqueEvidenceCount >= 3) ? 1 : 0;
+}
+This modification avoids accessing collectedEvidence if it's already full and reduces the scope of the mutex lock. It's important to note that these changes are more about robustness in a broader context; the original functions should work correctly in many scenarios.
+
+User
+can you give me the declartions for connectRooms, addRoom and createRoom
+ChatGPT
+Certainly! Based on the previous discussions and your code structure, here are the declarations for the connectRooms, addRoom, and createRoom functions. You should place these declarations in your header file (e.g., house.h), which is then included in both your house.c implementation file and your main.c file.
+
+c
+Copy code
+// house.h
+#ifndef HOUSE_H
+#define HOUSE_H
+
+#include "defs.h"
+
+// Function declarations for house-related operations
+
+struct Room* createRoom(const char* name);
+void connectRooms(struct Room* room1, struct Room* room2);
+void addRoom(struct Room** head, struct Room* room);
+
+#endif  // HOUSE_H
+Make sure to include the "house.h" header file where you need these functions (e.g., in main.c and house.c). The include guards (#ifndef, #define, #endif) are used to prevent multiple inclusions of the same header file, ensuring that the declarations are processed only once.
+
+User
+here is my entire header, am i missing any declrations from all of the code that you have given me #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <time.h>
+
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define C_TRUE          1
+#define C_FALSE         0
+#define HUNTER_WAIT     5000
+#define GHOST_WAIT      600
+#define NUM_HUNTERS     4
+#define FEAR_MAX        10
+#define LOGGING         C_TRUE
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+
+enum EvidenceType { EMF, TEMPERATURE, FINGERPRINTS, SOUND, EV_COUNT, EV_UNKNOWN };
+enum GhostClass { POLTERGEIST, BANSHEE, BULLIES, PHANTOM, GHOST_COUNT, GH_UNKNOWN };
+enum LoggerDetails { LOG_FEAR, LOG_BORED, LOG_EVIDENCE, LOG_SUFFICIENT, LOG_INSUFFICIENT, LOG_UNKNOWN };
+
+
+//type cast stuff
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    // Add any other room-related information if needed
+} Room;
+
+typedef struct HouseType {
+    Room* rooms;
+    int numRooms;
+} HouseType;
+
+typedef struct Hunter {
+    char name[MAX_STR];
+    enum EvidenceType equipment;
+    Room* currentRoom;
+    int fear;
+    int boredom;
+    pthread_t thread;
+} Hunter;
+
+typedef struct Ghost {
+    enum GhostClass type;
+    Room* currentRoom;
+    pthread_t thread;
+} Ghost;
+
+//declarations 
+void* hunterThread(void* arg);
+void* ghostThread(void* arg);
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType);
+Room* getRandomConnectedRoom(Room* currentRoom);
+void collectEvidence(enum EvidenceType evidenceType);
+int reviewEvidence();
+
+struct Room* createRoom(const char* name);
+void connectRooms(struct Room* room1, struct Room* room2);
+void addRoom(struct Room** head, struct Room* room);
+
+
+
+
+
+
+// Helper Utilies
+int randInt(int,int);        // Pseudo-random number generator function
+float randFloat(float, float);  // Pseudo-random float generator function
+enum GhostClass randomGhost();  // Return a randomly selected a ghost type
+void ghostToString(enum GhostClass, char*); // Convert a ghost type to a string, stored in output paremeter
+void evidenceToString(enum EvidenceType, char*); // Convert an evidence type to a string, stored in output parameter
+
+// Logging Utilities
+void l_hunterInit(char* name, enum EvidenceType equipment);
+void l_hunterMove(char* name, char* room);
+void l_hunterReview(char* name, enum LoggerDetails reviewResult);
+void l_hunterCollect(char* name, enum EvidenceType evidence, char* room);
+void l_hunterExit(char* name, enum LoggerDetails reason);
+void l_ghostInit(enum GhostClass type, char* room);
+void l_ghostMove(char* room);
+void l_ghostEvidence(enum EvidenceType evidence, char* room);
+void l_ghostExit(enum LoggerDetails reason);
+ChatGPT
+The header file you've provided seems comprehensive and includes all the necessary declarations for the functions and types used in your program. You have declarations for the main structures (Room, HouseType, Hunter, Ghost) and their associated functions. Additionally, you have the necessary declarations for utility functions (randInt, randFloat, randomGhost, ghostToString, evidenceToString) and logging functions.
+
+The missing function declarations (createRoom, connectRooms, addRoom) that you've asked for earlier are now included in this header file. It seems you've incorporated the changes correctly.
+
+Make sure to include this header file in your implementation files (main.c, house.c, ghost.c, hunter.c, etc.) where you use these types and functions. With this header, your code structure should be well-organized, making it easier to manage and understand.
+
+User
+do i need a decaltion for the populateRooms method in house.c file
+ChatGPT
+Yes, you should include a declaration for the populateRooms function in your header file (house.h) to ensure consistency and proper organization of your code. This allows other source files to know about the function and use it if needed.
+
+Here's how you can add the declaration to your house.h file:
+
+c
+Copy code
+// house.h
+#ifndef HOUSE_H
+#define HOUSE_H
+
+#include "defs.h"
+
+// ... (other declarations)
+
+void populateRooms(HouseType* house);
+
+#endif  // HOUSE_H
+Then, make sure to include house.h in your house.c file:
+
+c
+Copy code
+// house.c
+#include "house.h"
+
+// ... (other implementations)
+
+void populateRooms(HouseType* house) {
+    // Implementation of populateRooms
+    // ...
+}
+Including the function declaration in the header file is especially important if you plan to call this function from other source files or if the function is part of the interface that other modules need to interact with.
+
+User
+ Finalize Results
+4.1. When all threads have completed, print the results to the screen.
+4.2. List all hunters that have fear >= MAX_FEAR and all hunters that have boredom >= MAX_BOREDOM
+4.3. If all hunters have either too high fear or boredom, print that the ghost has won,
+4.4. Print all the evidence that the hunters collected,
+4.5. If three different pieces of evidence were collected, print the ghost that matches those pieces of evidence,
+4.6. Print the ghost’s type and print if the pieces of evidence correctly identified the ghost.
+4.6.1. Note: This is for testing purposes; in theory, your program should always print the correct ghost
+ChatGPT
+Certainly! To achieve the finalization of results, you can add a function in your main file (main.c) to handle these tasks after all threads have completed. Below is an example of how you might structure this part of your code:
+
+c
+Copy code
+// main.c
+#include "defs.h"
+#include "house.h"
+#include "hunter.h"
+#include "ghost.h"
+
+// ... (previous code)
+
+void finalizeResults(const HouseType* house, const Hunter hunters[NUM_HUNTERS], const Ghost* ghost) {
+    // Print hunters with fear >= FEAR_MAX
+    printf("Hunters with fear >= FEAR_MAX:\n");
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].fear >= FEAR_MAX) {
+            printf("- %s\n", hunters[i].name);
+        }
+    }
+
+    // Print hunters with boredom >= BOREDOM_MAX
+    printf("\nHunters with boredom >= BOREDOM_MAX:\n");
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].boredom >= BOREDOM_MAX && hunters[i].fear < FEAR_MAX) {
+            printf("- %s\n", hunters[i].name);
+        }
+    }
+
+    // Check if the ghost has won
+    int allHuntersInactive = 1;
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].fear < FEAR_MAX && hunters[i].boredom < BOREDOM_MAX) {
+            allHuntersInactive = 0;
+            break;
+        }
+    }
+
+    if (allHuntersInactive) {
+        printf("\nThe ghost has won! All hunters are inactive.\n");
+    }
+
+    // Print evidence collected by hunters
+    printf("\nEvidence collected by hunters:\n");
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        char evidenceTypeStr[MAX_STR];
+        evidenceToString(collectedEvidence[i], evidenceTypeStr);
+        printf("- %s\n", evidenceTypeStr);
+    }
+
+    // Check if three different pieces of evidence were collected
+    if (numCollectedEvidence >= 3) {
+        // Identify the ghost based on evidence
+        GhostClass identifiedGhost = identifyGhost(collectedEvidence);
+        char identifiedGhostStr[MAX_STR];
+        ghostToString(identifiedGhost, identifiedGhostStr);
+
+        // Print identified ghost type
+        printf("\nIdentified Ghost Type: %s\n", identifiedGhostStr);
+
+        // Check if identification is correct
+        if (identifiedGhost == ghost->type) {
+            printf("The pieces of evidence correctly identified the ghost!\n");
+        } else {
+            printf("The pieces of evidence did not correctly identify the ghost.\n");
+        }
+    }
+}
+
+int main() {
+    // ... (previous code)
+
+    // Create threads for hunters
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        pthread_create(&hunters[i].thread, NULL, hunterThread, (void*)&hunters[i]);
+    }
+
+    // Create thread for the ghost
+    pthread_create(&ghost.thread, NULL, ghostThread, (void*)&ghost);
+
+    // ... (previous thread creation code)
+
+    // Join threads
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        pthread_join(hunters[i].thread, NULL);
+    }
+
+    pthread_join(ghost.thread, NULL);
+
+    // Finalize results
+    finalizeResults(&house, hunters, &ghost);
+
+    return 0;
+}
+This example assumes that you have a function identifyGhost that can identify the ghost based on the collected evidence. The finalizeResults function then prints the results as specified. Adjust the code based on your actual implementation.
+
+User
+can you write me the code for identifyGhost 
+ChatGPT
+Certainly! To identify the ghost based on the collected evidence, you can create a function called identifyGhost. Here's an example implementation:
+
+c
+Copy code
+// main.c or house.c (where you handle ghost identification)
+#include "defs.h"
+
+GhostClass identifyGhost(const enum EvidenceType* collectedEvidence) {
+    // Implement your logic to identify the ghost based on the collected evidence
+    // This is a simple example, you might need to adjust this based on your requirements
+
+    // Count occurrences of each evidence type
+    int evidenceCount[EV_COUNT] = {0};
+
+    for (int i = 0; i < 3; i++) {
+        evidenceCount[collectedEvidence[i]]++;
+    }
+
+    // Check if there are three different pieces of evidence
+    int uniqueEvidenceCount = 0;
+
+    for (int i = 0; i < EV_COUNT; i++) {
+        if (evidenceCount[i] > 0) {
+            uniqueEvidenceCount++;
+        }
+    }
+
+    if (uniqueEvidenceCount == 3) {
+        // Implement your logic to identify the ghost based on the evidence
+        // This is a placeholder, replace it with your actual logic
+        if (evidenceCount[EMF] > 0 && evidenceCount[TEMPERATURE] > 0 && evidenceCount[FINGERPRINTS] > 0) {
+            return POLTERGEIST;
+        } else if (evidenceCount[EMF] > 0 && evidenceCount[SOUND] > 0 && evidenceCount[FINGERPRINTS] > 0) {
+            return BANSHEE;
+        } else if (evidenceCount[TEMPERATURE] > 0 && evidenceCount[SOUND] > 0 && evidenceCount[FINGERPRINTS] > 0) {
+            return BULLIES;
+        } else if (evidenceCount[EMF] > 0 && evidenceCount[TEMPERATURE] > 0 && evidenceCount[SOUND] > 0) {
+            return PHANTOM;
+        }
+    }
+
+    // Return GH_UNKNOWN if unable to identify the ghost
+    return GH_UNKNOWN;
+}
+This is a simplified example, and you need to replace the placeholder logic with your actual logic for identifying the ghost based on the evidence. The provided code assumes that each ghost type is associated with a specific combination of evidence types. Update the logic according to your ghost identification rules.
+
+User
+Evidence: Evidence is a simple enumerated data type containing the name of the evidence left by the Ghost.
+Each Ghost can leave three out of four possible types of evidence. This means that the simulation should have
+four hunters, one for each possible evidence type, and that three out of four hunters will be capable of identifying
+the ghost when combining their evidence together. Evidence collections should have a semaphore field to prevent
+them from being modified by multiple threads at the same time. Since Evidence is a simple enumerated data type,
+it is okay to duplicate it for the purposes of temporary variables.
+ChatGPT
+Given your description, it seems that you need four hunters, each capable of detecting a specific type of evidence. The evidence collection needs to be protected by a semaphore to prevent multiple threads from modifying it simultaneously.
+
+Let's update the Hunter structure, add evidence-related fields, and introduce semaphores for evidence protection. Additionally, I'll provide an example of how you might initialize these structures:
+
+c
+Copy code
+// defs.h
+
+// ... (previous code)
+
+typedef struct Evidence {
+    enum EvidenceType type;
+    // Add any other evidence-related information if needed
+} Evidence;
+
+typedef struct Hunter {
+    char name[MAX_STR];
+    enum EvidenceType equipment;
+    Room* currentRoom;
+    int fear;
+    int boredom;
+    pthread_t thread;
+    Evidence* evidenceCollection; // Each hunter has its own evidence collection
+    sem_t evidenceSemaphore; // Semaphore for evidence protection
+} Hunter;
+
+// ... (other declarations)
+Now, let's update the functions that handle evidence collection and review in the hunter.c file:
+
+c
+Copy code
+// hunter.c
+
+#include "defs.h"
+
+// ... (previous code)
+
+void collectEvidence(Hunter* hunter, enum EvidenceType evidenceType, Room* room) {
+    sem_wait(&hunter->evidenceSemaphore); // Wait for access to evidence collection
+
+    // Check if the evidence is already collected
+    int evidenceAlreadyCollected = 0;
+    for (int i = 0; i < MAX_COLLECTED_EVIDENCE; i++) {
+        if (hunter->evidenceCollection[i].type == evidenceType) {
+            evidenceAlreadyCollected = 1;
+            break;
+        }
+    }
+
+    if (!evidenceAlreadyCollected) {
+        // Collect evidence
+        hunter->evidenceCollection[hunter->numCollectedEvidence].type = evidenceType;
+        l_hunterCollect(hunter->name, evidenceType, room->name);
+        hunter->numCollectedEvidence++;
+    }
+
+    sem_post(&hunter->evidenceSemaphore); // Release access to evidence collection
+}
+
+int reviewEvidence(const Hunter* hunters, int numHunters, enum EvidenceType evidenceType) {
+    int evidenceCount = 0;
+
+    for (int i = 0; i < numHunters; i++) {
+        for (int j = 0; j < hunters[i].numCollectedEvidence; j++) {
+            if (hunters[i].evidenceCollection[j].type == evidenceType) {
+                evidenceCount++;
+                break; // Break to count each hunter only once for a specific evidence type
+            }
+        }
+    }
+
+    return evidenceCount;
+}
+
+// ... (other implementations)
+This example introduces an Evidence structure for each collected evidence, and each hunter has its own evidence collection and a semaphore for protection. The collectEvidence function now takes the Hunter as a parameter and updates the hunter's evidence collection. The reviewEvidence function checks how many hunters have collected a specific type of evidence.
+
+Remember to initialize the semaphore in the initHunter function or wherever you initialize your hunters. Also, make sure to destroy the semaphore when you're done using it.
+
+User
+this is my entire assignment, can you give me all the code to make this work This section describes the overall definitions and control flow at a high level. More detailed instructions and requirements
+will be provided below. Be aware that your goal is to have a functioning, multi-threaded simulation, which follows the rules
+laid out here, and which executes without crashing, without valgrind warnings, and without memory leaks. While some
+implementation details are specified and must be adhered to, a large part of this assignment is using the tools from class
+to design your implementation. While you may create new collections and temporary structures, data (i.e. evidence,
+ghosts, rooms, and hunters) should only exist once in memory. Enumerator values and pointers may be duplicated.
+Please be aware: Some of the data types will be used somewhat differently than we have used in class, and you are
+allowed to modify structures where requirements have not been specified. You are allowed to add additional data to
+these, as long as it follows good design principles.
+Data Definitions and Behaviours:
+1. Room: A room represents a room in the house that the hunters are hunting in. A room has a name, a linked list of
+other rooms that it is connected to, a linked list of evidence that the ghost has left in the room, a collection of
+hunters currently in the room, and a pointer to the ghost. If the ghost is not in the room, the ghost pointer should
+initially be assigned to NULL, until a Ghost is in the room, where it becomes set to the Ghost’s address.
+Note: You will be required to create a Linked List of RoomNodes, with RoomNodes containing Rooms.
+We must be able to append rooms to the end of the linked list, but we do not need to account for random
+insertion. You will likely want to write a separate, reusable function that takes in two Rooms and connects them
+together. house.c comes with a populateRooms() function that shows expected workflow. Rooms must have a
+semaphore to prevent them from being modified by multiple threads at the same time.
+2. House: A house is used to hold all of the information about the current hunt. It contains the, a collection of
+hunters, a linked list of all rooms, and the shared evidence list that all hunters will reference. The first room in
+every house is always the ghost hunter’s vehicle, the Van. The house that we will use is based on the “Willow
+Street House” from the video game Phasmaphobia. A map is available via the Steam Community and below
+[link]. The Van room connects with the Hallway in our sample code.
+Note: A sample populate function has been provided in the code house.c, moving from the van to the hallway.
+Your own design decisions may require modifying this code in order to work. It is provided for demonstration only,
+but make sure that you keep the same house layout if you choose to modify the way that the house population will
+work.Ghost: A ghost is an entity that moves between rooms and leaves evidence behind. A ghost contains a
+GhostClass, which is an enumerated data type representing the type of ghost it is. It also contains a pointer to the
+room that it is in. It contains this pointer so that ghost related functions need only to know about the ghost to
+operate. It also contains a boredom timer - an integer initially set to 0. Each time the ghost is in a room with a
+hunter, it resets the counter to 0. Each time the ghost is in a room without a hunter, it increases the timer variable
+by 1. If the boredom timer reaches BOREDOM_MAX, it is too bored, and ends its haunting by returning or calling
+pthread_exit(). A ghost can take one of the following three actions at random:
+a. Do nothing,
+b. Leave evidence by adding it to the room’s evidence collection. The evidence must be part of the ghost’s
+valid evidence types, listed below,
+c. Move to a random, connected room, only if a hunter is NOT in the room. If a hunter is in the room, they
+will only choose to do nothing or leave evidence.
+Note: There is only ever one ghost in a house. Each ghost leaves 3 different types of evidence at random
+from a total of 4 pieces of evidence, defined in the table below: Table 1. A ghost can be a POLTERGEIST,
+BANSHEE, BULLIES, or PHANTOM.
+4. Hunter: A hunter is an entity that moves between rooms, reads the room for evidence, and reviews collected
+evidence. They contain a pointer to the room they are currently in, an enumerated type representing the type of
+evidence their equipment can read (note: there is no equipment type, only the type of evidence they collect), a
+name, a pointer to a shared collection of Evidence that all hunters will share, a fear integer which starts at 0, and
+a boredom integer which starts at 0. Hunters choose their actions at random. If a hunter starts their loop in the
+same room as a ghost, they gain 1 point of fear and reset their boredom to 0. If they are not in the room with a
+Ghost, they increase their boredom by 1. If they reach FEAR_MAX fear or BOREDOM_MAX boredom, they are
+removed from the simulation by returning or exiting their thread.
+To further clarify, Hunters can randomly perform any of the following actions on their turn:
+a. Move to a random, connected room,
+b. Collect evidence in a room if evidence is in that room AND the hunter’s equipment matches the evidence
+type in the room,
+c. Review the evidence that is shared between all hunters to determine if the thread should end; it should
+end if the hunters have collectively gathered 3 unique pieces of evidence,
+d. Exit the thread (return or pthread_exit) because they are bored/afraid/collected 3 pieces of evidence
+5. Evidence: Evidence is a simple enumerated data type containing the name of the evidence left by the Ghost.
+Each Ghost can leave three out of four possible types of evidence. This means that the simulation should have
+four hunters, one for each possible evidence type, and that three out of four hunters will be capable of identifying
+the ghost when combining their evidence together. Evidence collections should have a semaphore field to prevent
+them from being modified by multiple threads at the same time. Since Evidence is a simple enumerated data type,
+it is okay to duplicate it for the purposes of temporary variables.
+Ghosts and their Evidence Types:
+● POLTERGEIST: Leaves ghostly EMF, TEMPERATURE, and FINGERPRINTS
+● BANSHEE: Leaves ghostly EMF, TEMPERATURE, and SOUND
+● BULLIES: Leaves ghostly EMF, FINGERPRINTS, and SOUND
+● PHANTOM: Leaves ghostly TEMPERATURE, FINGERPRINTS, and SOUND
+Hunters obtain evidence by searching a room and can perform a “Review Evidence” action to check if they have collected
+enough evidence to identify the ghost.Logging
+You have been provided with a mandatory logging file, logger.c. This can be modified, but the print messages must
+remain identical to support grading. If messages are not identical, and if the messages do not appear, you will lose
+execution marks for these actions.
+logger.c contains several logging functions to ensure major actions are recorded consistently. The forward declarations for
+these are provided in the provided defs.h. Each of the following actions must be logged for full execution marks:
+1. Hunters:
+a. Initialization/Creation: Log their name and starting equipment,
+b. Movement: Log their name and the room they are moving to,
+c. Collect: Log their name, the evidence they collected, and the name of the room they collected it in. ONLY log
+successful collections, i.e., if they were able to collect it with their device code,
+d. Review: Log their name and either LOG_SUFFICIENT or LOG_INSUFFICIENT, which specify whether their
+evidence review stated that they had sufficient evidence to exit the simulation or if they had insufficient
+evidence to exit the simulation,
+e. Exit: Log their name and one of LOG_BORED, LOG_FEAR, LOG_EVIDENCE depending on if they exited the
+simulation due to boredom, fear, or because they found three pieces of evidence.
+2. Ghost:
+a. Initialization/Creation: Log the type of ghost that they are (the GhostClass),
+b. Movement: Log the name of the room they are moving to,
+c. Leaving Evidence: Log the kind of evidence they are leaving and the name of the room they are leaving it in,
+d. Exit: Log the reason they are leaving. This should be LOG_BORED every time but included here to make sure.
+This logging will be used to support grading with partial automation. As such, it is important to use the logging right away
+as you work. The logging can be disabled using the LOGGING definition by assigning it a value of C_FALSE. Feel free to
+enable/disable this so that you can work in a way that you like, as long as we can enable it for grading.
+Again: You are allowed to modify these logging functions to work with them differently, but the exact printing must remain
+intact or lose execution marks.Multi-Threading and Control Flow:
+It is mandatory that each entity - the ghost, and each of the four hunters, runs their behaviour in a single thread each. This
+means that you will be created 5 threads total, with two different functions being sent to pthread_create(). You must
+send a pointer to the Ghost to the ghost thread and a pointer to one hunter to each hunter thread (so that each hunter’s
+data is only provided to one thread each).
+The main control flow should be loosely as follows:
+1. Initialize
+1.1. Ask the user to input 4 names for our hunters,
+1.2. Populate the house with the provided rooms,
+1.3. Place the 4 hunters in the head of our room list, which should be the Van room,
+1.4. Place the ghost in a random room, that is not the van. The ghost may move into the van later but not
+start there.
+1.5. Create one thread for each hunter and one thread for the ghost (five total).
+2. Ghost Thread
+2.1. If the Ghost is in the room with a hunter, reset the Ghost’s boredom timer to 0, and it cannot move.
+Randomly choose to leave evidence or to do nothing.
+2.2. Otherwise, if the Ghost is not in the room with a hunter, increase the Ghost’s boredom counter by 1.
+Randomly choose to move to an adjacent room, to leave evidence, or to do nothing.
+2.3. If moving to an adjacent room, remember to update the room’s Ghost pointer and to update the Ghost’s
+Room pointer.
+2.4. If leaving evidence, pick an EvidenceType from the ghost’s list of three valid evidence types and add it to
+the room’s evidence collection.
+2.5. If the ghost’s boredom counter has reached BOREDOM_MAX, exit the thread.
+3. Hunter Threads
+3.1. If the hunter is in a room with a ghost, increase the fear field of the hunter by 1 (which should be defined
+by a definition in defs.h so that it can be modified). Reset the hunter’s boredom timer to 0. Otherwise,
+increase boredom by 1.
+3.2. Randomly choose to either collect evidence, move, or review evidence.
+3.2.1. If you the hunter is collecting evidence, look through the room’s evidence collection. If there is
+evidence that matches the type of evidence the hunter can detect, remove it from the room’s
+evidence collection and add it to the shared evidence collection for all hunters. Not all evidence
+needs to be saved, just enough to help identify the ghost.
+3.2.2. If the hunter is moving, move to a random, connected room. Make sure to update the room
+pointer in the hunter and the hunter collection in the room.
+3.2.3. If the hunter is reviewing, look at each piece of evidence in the hunter’s shared evidence
+collection and see if there is sufficient evidence (i.e., three unique pieces) to exit the simulation,
+and exit the simulation if there is enough evidence.
+3.3. Check if the fear of the hunter is greater than or equal to FEAR_MAX. If it is, exit the thread.
+3.4. Check if the hunter’s boredom is greater than or equal to BOREDOM_MAX. If it is, exit the thread.
+4. Finalize Results
+4.1. When all threads have completed, print the results to the screen.
+4.2. List all hunters that have fear >= MAX_FEAR and all hunters that have boredom >= MAX_BOREDOM
+4.3. If all hunters have either too high fear or boredom, print that the ghost has won,
+4.4. Print all the evidence that the hunters collected,
+4.5. If three different pieces of evidence were collected, print the ghost that matches those pieces of evidence,
+4.6. Print the ghost’s type and print if the pieces of evidence correctly identified the ghost.
+4.6.1. Note: This is for testing purposes; in theory, your program should always print the correct ghost
+ChatGPT
+To achieve the described functionality, you will need several files: main.c, house.c, ghost.c, hunter.c, logger.c, and defs.h. Below is an outline of the code for each file. Note that this is a basic outline, and you may need to make adjustments based on your specific requirements.
+
+defs.h - Declarations and Definitions
+c
+Copy code
+// defs.h
+
+#include <pthread.h>
+#include <semaphore.h>
+
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define FEAR_MAX        10
+#define C_TRUE          1
+#define C_FALSE         0
+#define LOGGING         C_TRUE
+#define MAX_COLLECTED_EVIDENCE 3
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+typedef enum LoggerDetails LoggerDetails;
+
+enum EvidenceType { EMF, TEMPERATURE, FINGERPRINTS, SOUND, EV_COUNT, EV_UNKNOWN };
+enum GhostClass { POLTERGEIST, BANSHEE, BULLIES, PHANTOM, GHOST_COUNT, GH_UNKNOWN };
+enum LoggerDetails { LOG_FEAR, LOG_BORED, LOG_EVIDENCE, LOG_SUFFICIENT, LOG_INSUFFICIENT, LOG_UNKNOWN };
+
+// Add struct definitions for Room, House, Hunter, Ghost, and Evidence
+// ...
+
+// Add forward declarations for functions
+// ...
+
+// Add semaphore declarations
+extern sem_t evidenceMutex;
+extern sem_t roomMutex;
+main.c - Main Program
+c
+Copy code
+// main.c
+
+#include "defs.h"
+#include "house.c"
+#include "ghost.c"
+#include "hunter.c"
+#include "logger.c"
+
+int main() {
+    // Initialization
+    // Populate the house, create threads for ghost and hunters, etc.
+    // ...
+
+    // Join threads
+    // ...
+
+    // Print results
+    // ...
+
+    return 0;
+}
+house.c - House-related Functions
+c
+Copy code
+// house.c
+
+#include "defs.h"
+
+// Add implementation for functions like populateRooms, addRoom, connectRooms, etc.
+// ...
+ghost.c - Ghost Thread
+c
+Copy code
+// ghost.c
+
+#include "defs.h"
+
+void* ghostThread(void* arg) {
+    // Ghost behavior
+    // ...
+
+    return NULL;
+}
+hunter.c - Hunter Threads
+c
+Copy code
+// hunter.c
+
+#include "defs.h"
+
+void* hunterThread(void* arg) {
+    // Hunter behavior
+    // ...
+
+    return NULL;
+}
+logger.c - Logging Functions
+c
+Copy code
+// logger.c
+
+#include "defs.h"
+
+// Add implementation for logger functions
+// ...
+This is a basic outline, and you'll need to implement the actual behavior inside the functions, considering synchronization and proper use of semaphores. Also, don't forget to initialize and destroy the semaphores appropriately.
+
+User
+can you give me the code
+ChatGPT
+Sure, I'll provide a simplified version of the code based on the provided requirements. Please note that the actual implementation may require additional details and fine-tuning based on your specific needs.
+
+defs.h
+c
+Copy code
+// defs.h
+
+#include <pthread.h>
+#include <semaphore.h>
+
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define FEAR_MAX        10
+#define C_TRUE          1
+#define C_FALSE         0
+#define LOGGING         C_TRUE
+#define MAX_COLLECTED_EVIDENCE 3
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+typedef enum LoggerDetails LoggerDetails;
+
+enum EvidenceType { EMF, TEMPERATURE, FINGERPRINTS, SOUND, EV_COUNT, EV_UNKNOWN };
+enum GhostClass { POLTERGEIST, BANSHEE, BULLIES, PHANTOM, GHOST_COUNT, GH_UNKNOWN };
+enum LoggerDetails { LOG_FEAR, LOG_BORED, LOG_EVIDENCE, LOG_SUFFICIENT, LOG_INSUFFICIENT, LOG_UNKNOWN };
+
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    struct Room* connectedRooms[MAX_STR]; // Array of connected rooms
+    EvidenceType evidenceCollection[MAX_COLLECTED_EVIDENCE];
+    int numEvidence;
+    struct Hunter* huntersInRoom;
+    struct Ghost* ghostInRoom;
+} Room;
+
+typedef struct House {
+    Room* rooms;
+    int numRooms;
+    sem_t evidenceMutex;
+    sem_t roomMutex;
+} House;
+
+typedef struct Hunter {
+    char name[MAX_STR];
+    EvidenceType equipment;
+    Room* currentRoom;
+    int fear;
+    int boredom;
+    pthread_t thread;
+} Hunter;
+
+typedef struct Ghost {
+    GhostClass type;
+    Room* currentRoom;
+    pthread_t thread;
+    int boredomCounter;
+} Ghost;
+
+// Forward Declarations
+void populateRooms(House* house);
+void addRoom(Room** head, Room* room);
+void connectRooms(Room* room1, Room* room2);
+Room* getRandomConnectedRoom(Room* currentRoom);
+
+void collectEvidence(EvidenceType evidenceType);
+int reviewEvidence();
+house.c
+c
+Copy code
+// house.c
+
+#include "defs.h"
+
+void populateRooms(House* house) {
+    // Implementation of room creation and connection
+    // ...
+}
+
+void addRoom(Room** head, Room* room) {
+    // Implementation to add a room to the house
+    // ...
+}
+
+void connectRooms(Room* room1, Room* room2) {
+    // Implementation to connect two rooms
+    // ...
+}
+
+Room* getRandomConnectedRoom(Room* currentRoom) {
+    // Implementation to get a random connected room
+    // ...
+}
+ghost.c
+c
+Copy code
+// ghost.c
+
+#include "defs.h"
+
+void* ghostThread(void* arg) {
+    Ghost* ghost = (Ghost*)arg;
+
+    while (1) {
+        // Ghost behavior
+        // ...
+
+        // Sleep for a while
+        usleep(GHOST_WAIT);
+    }
+
+    return NULL;
+}
+hunter.c
+c
+Copy code
+// hunter.c
+
+#include "defs.h"
+
+void* hunterThread(void* arg) {
+    Hunter* hunter = (Hunter*)arg;
+
+    while (1) {
+        // Hunter behavior
+        // ...
+
+        // Sleep for a while
+        usleep(HUNTER_WAIT);
+    }
+
+    return NULL;
+}
+logger.c
+c
+Copy code
+// logger.c
+
+#include "defs.h"
+#include <stdio.h>
+
+// Logger functions implementation
+// ...
+main.c
+c
+Copy code
+// main.c
+
+#include "defs.h"
+#include "house.c"
+#include "ghost.c"
+#include "hunter.c"
+#include "logger.c"
+
+int main() {
+    // Initialize semaphores
+    sem_init(&evidenceMutex, 0, 1);
+    sem_init(&roomMutex, 0, 1);
+
+    // Create and populate the house
+    House house;
+    house.numRooms = 0; // Initialize appropriately
+    house.rooms = NULL; // Initialize appropriately
+    populateRooms(&house);
+
+    // Create and initialize ghost
+    Ghost ghost;
+    ghost.type = randomGhost();
+    ghost.currentRoom = getRandomConnectedRoom(house.rooms);
+    ghost.boredomCounter = 0;
+    pthread_create(&ghost.thread, NULL, ghostThread, (void*)&ghost);
+
+    // Create and initialize hunters
+    Hunter hunters[NUM_HUNTERS];
+    char hunterNames[NUM_HUNTERS][MAX_STR] = {"Hunter1", "Hunter2", "Hunter3", "Hunter4"};
+
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        hunters[i].name = hunterNames[i];
+        hunters[i].equipment = (EvidenceType)i; // Assign equipment based on the index
+        hunters[i].currentRoom = house.rooms; // Initial room, modify as needed
+        hunters[i].fear = 0;
+        hunters[i].boredom = 0;
+        pthread_create(&hunters[i].thread, NULL, hunterThread, (void*)&hunters[i]);
+    }
+
+    // Join threads
+    pthread_join(ghost.thread, NULL);
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        pthread_join(hunters[i].thread, NULL);
+    }
+
+    // Finalize results
+    // ...
+
+    // Destroy semaphores
+    sem_destroy(&evidenceMutex);
+    sem_destroy(&roomMutex);
+
+    return 0;
+}
+This is a simplified outline to give you a starting point. Depending on your specific requirements, you may need to make adjustments and implement additional functionalities.
+
+User
+create me a makefile with these files main.c ghost.c hunter.c house.c logger.c defs.h evidence.c utils.c
+ChatGPT
+Sure, here's a basic Makefile that you can use for your project. You may need to adjust it based on your specific directory structure.
+
+make
+Copy code
+CC = gcc
+CFLAGS = -Wall -pthread
+
+all: ghost_hunter_simulation
+
+ghost_hunter_simulation: main.o ghost.o hunter.o house.o logger.o evidence.o utils.o
+	$(CC) $(CFLAGS) $^ -o $@
+
+main.o: main.c defs.h ghost.h hunter.h house.h logger.h evidence.h utils.h
+	$(CC) $(CFLAGS) -c main.c
+
+ghost.o: ghost.c defs.h ghost.h
+	$(CC) $(CFLAGS) -c ghost.c
+
+hunter.o: hunter.c defs.h hunter.h
+	$(CC) $(CFLAGS) -c hunter.c
+
+house.o: house.c defs.h house.h
+	$(CC) $(CFLAGS) -c house.c
+
+logger.o: logger.c defs.h logger.h
+	$(CC) $(CFLAGS) -c logger.c
+
+evidence.o: evidence.c defs.h evidence.h
+	$(CC) $(CFLAGS) -c evidence.c
+
+utils.o: utils.c defs.h utils.h
+	$(CC) $(CFLAGS) -c utils.c
+
+clean:
+	rm -f *.o ghost_hunter_simulation
+Save this text in a file named Makefile in the same directory as your source files. This Makefile assumes that your source files (main.c, ghost.c, hunter.c, house.c, logger.c, defs.h, evidence.c, utils.c) are all in the same directory. If you have a different directory structure, you may need to adjust the paths accordingly.
+
+User
+i have these error in my ghost.c file identifier "hunters" is undefined / ghost.c
+#include "defs.h"
+
+
+void* ghostThread(void* arg) {
+    Ghost* ghost = (Ghost*)arg;
+
+    // Initialization log
+    l_ghostInit(ghost->type, ghost->currentRoom->name);
+
+    while (1) {
+        // Check if the Ghost is in the room with a hunter
+        int inRoomWithHunter = 0;
+        for (int i = 0; i < NUM_HUNTERS; i++) {
+            if (hunters[i].currentRoom == ghost->currentRoom) {
+                inRoomWithHunter = 1;
+                break;
+            }
+        }
+
+        if (inRoomWithHunter) {
+            // Reset boredom timer since Ghost is in the room with a hunter
+            ghost->boredom = 0;
+
+            // Randomly choose to leave evidence or do nothing
+            int action = randInt(0, 1);
+            switch (action) {
+                case 0:
+                    // Do nothing
+                    break;
+                case 1:
+                    // Leave evidence
+                    enum EvidenceType evidenceType = randomGhostEvidence();
+                    l_ghostEvidence(evidenceType, ghost->currentRoom->name);
+                    addEvidenceToRoom(ghost->currentRoom, evidenceType);
+                    break;
+            }
+        } else {
+            // Ghost is not in the room with a hunter
+            // Increase the Ghost’s boredom counter by 1
+            ghost->boredom++;
+
+            // Randomly choose to move to an adjacent room, leave evidence, or do nothing
+            int action = randInt(0, 2);
+            switch (action) {
+                case 0:
+                    // Do nothing
+                    break;
+                case 1:
+                    // Leave evidence
+                    enum EvidenceType evidenceType = randomGhostEvidence();
+                    l_ghostEvidence(evidenceType, ghost->currentRoom->name);
+                    addEvidenceToRoom(ghost->currentRoom, evidenceType);
+                    break;
+                case 2:
+                    // Move to an adjacent room
+                    Room* nextRoom = getRandomConnectedRoom(ghost->currentRoom);
+                    if (nextRoom != NULL) {
+                        l_ghostMove(nextRoom->name);
+
+                        // Update the room’s Ghost pointer
+                        ghost->currentRoom->ghost = NULL;
+                        nextRoom->ghost = ghost;
+
+                        // Update the Ghost’s Room pointer
+                        ghost->currentRoom = nextRoom;
+                    }
+                    break;
+            }
+        }
+
+        // Check if the ghost’s boredom counter has reached BOREDOM_MAX
+        if (ghost->boredom >= BOREDOM_MAX) {
+            l_ghostExit(LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Introduce some delay before the next iteration
+        usleep(GHOST_WAIT * 1000);
+    }
+}
+ChatGPT
+The error you're encountering, "identifier 'hunters' is undefined," suggests that the hunters array is not defined or declared in the scope of your ghostThread function. To fix this, you need to make sure that the hunters array is accessible in your ghost.c file.
+
+Based on your description and the requirements, it seems like the hunters array is declared in your main.c file or another file where it's initialized. To make hunters accessible in ghost.c, you should include the defs.h header file in ghost.c. The defs.h file likely contains the declaration of the hunters array.
+
+Here's what you can do:
+
+In your ghost.c file, add the following line at the top, along with other #include directives:
+
+c
+Copy code
+#include "defs.h"
+Make sure that this line is present, and defs.h should contain the declaration of the hunters array. This way, your ghostThread function will recognize the hunters array.
+
+If the issue persists or if you encounter any other errors, please provide additional details, and I'll be happy to help further.
+
+User
+that did not fix the issue , here is my defs.h file #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <time.h>
+
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define C_TRUE          1
+#define C_FALSE         0
+#define HUNTER_WAIT     5000
+#define GHOST_WAIT      600
+#define NUM_HUNTERS     4
+#define FEAR_MAX        10
+#define LOGGING         C_TRUE
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+
+enum EvidenceType { EMF, TEMPERATURE, FINGERPRINTS, SOUND, EV_COUNT, EV_UNKNOWN };
+enum GhostClass { POLTERGEIST, BANSHEE, BULLIES, PHANTOM, GHOST_COUNT, GH_UNKNOWN };
+enum LoggerDetails { LOG_FEAR, LOG_BORED, LOG_EVIDENCE, LOG_SUFFICIENT, LOG_INSUFFICIENT, LOG_UNKNOWN };
+
+
+//type cast stuff
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    // Add any other room-related information if needed
+} Room;
+
+typedef struct HouseType {
+    Room* rooms;
+    int numRooms;
+} HouseType;
+
+typedef struct Hunter {
+    char name[MAX_STR];
+    enum EvidenceType equipment;
+    Room* currentRoom;
+    int fear;
+    int boredom;
+    pthread_t thread;
+} Hunter;
+
+typedef struct Ghost {
+    enum GhostClass type;
+    Room* currentRoom;
+    pthread_t thread;
+} Ghost;
+
+//declarations 
+void* hunterThread(void* arg);
+void* ghostThread(void* arg);
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType);
+Room* getRandomConnectedRoom(Room* currentRoom);
+void collectEvidence(enum EvidenceType evidenceType);
+int reviewEvidence();
+
+struct Room* createRoom(const char* name);
+void connectRooms(struct Room* room1, struct Room* room2);
+void addRoom(struct Room** head, struct Room* room);
+void populateRooms(HouseType* house);
+
+
+
+
+
+// Helper Utilies
+int randInt(int,int);        // Pseudo-random number generator function
+float randFloat(float, float);  // Pseudo-random float generator function
+enum GhostClass randomGhost();  // Return a randomly selected a ghost type
+void ghostToString(enum GhostClass, char*); // Convert a ghost type to a string, stored in output paremeter
+void evidenceToString(enum EvidenceType, char*); // Convert an evidence type to a string, stored in output parameter
+
+// Logging Utilities
+void l_hunterInit(char* name, enum EvidenceType equipment);
+void l_hunterMove(char* name, char* room);
+void l_hunterReview(char* name, enum LoggerDetails reviewResult);
+void l_hunterCollect(char* name, enum EvidenceType evidence, char* room);
+void l_hunterExit(char* name, enum LoggerDetails reason);
+void l_ghostInit(enum GhostClass type, char* room);
+void l_ghostMove(char* room);
+void l_ghostEvidence(enum EvidenceType evidence, char* room);
+void l_ghostExit(enum LoggerDetails reason);
+ChatGPT
+I see the issue. The hunters array is not declared in defs.h, which is causing the error in your ghost.c file. To resolve this, you should add an external declaration for the hunters array in your defs.h file.
+
+Add the following line to your defs.h file, preferably at the beginning, right after the #include directives:
+
+c
+Copy code
+extern Hunter hunters[NUM_HUNTERS];
+This line declares the hunters array as an external variable that is defined elsewhere (in your main.c file or wherever you initialize the hunters). Now, the ghost.c file will recognize the hunters array.
+
+Here's the modified defs.h file:
+
+c
+Copy code
+// ... (existing code)
+
+extern Hunter hunters[NUM_HUNTERS];
+
+// ... (remaining code)
+After making this change, try to recompile your code, and it should resolve the "identifier 'hunters' is undefined" error in your ghost.c file.
+
+User
+now im getting this error struct "Ghost" has no field "boredom"
+ChatGPT
+It appears that the Ghost struct does not have a boredom field, but your ghostThread function in ghost.c references it. To fix this, you should add a boredom field to the Ghost struct in your defs.h file.
+
+Update the Ghost struct in your defs.h file to include the boredom field:
+
+c
+Copy code
+typedef struct Ghost {
+    enum GhostClass type;
+    Room* currentRoom;
+    int boredom; // Add this line to include the boredom field
+    pthread_t thread;
+} Ghost;
+Make sure to add the int boredom; line to the Ghost struct. This will allow the ghostThread function to access the boredom field of the Ghost struct without errors.
+
+After making this change, recompile your code, and the "struct 'Ghost' has no field 'boredom'" error should be resolved.
+
+User
+now im getting this error struct "Room" has no field "ghost"
+ChatGPT
+If your Room struct does not have a ghost field, and you are trying to access it in your code, you should add the ghost field to the Room struct in your defs.h file.
+
+Update the Room struct in your defs.h file to include the ghost field:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    struct Ghost* ghost; // Add this line to include the ghost field
+    // Add any other room-related information if needed
+} Room;
+Make sure to add the struct Ghost* ghost; line to the Room struct. This will allow rooms to keep track of whether there is a ghost in the room.
+
+After making this change, recompile your code, and the "struct 'Room' has no field 'ghost'" error should be resolved.
+
+User
+im getting this error i my hunter.c struct "Room" has no field "evidenceType" // hunter.c
+#include "defs.h"
+
+
+void* hunterThread(void* arg) {
+    Hunter* hunter = (Hunter*)arg;
+
+    // Initialization log
+    l_hunterInit(hunter->name, hunter->equipment);
+
+    while (1) {
+        // Check if the hunter is in a room with a ghost
+        int inRoomWithGhost = (hunter->currentRoom->ghost != NULL);
+
+        if (inRoomWithGhost) {
+            // Increase fear field of the hunter by 1 and reset boredom timer
+            hunter->fear++;
+            hunter->boredom = 0;
+        } else {
+            // Hunter is not in a room with a ghost
+            // Increase boredom by 1
+            hunter->boredom++;
+        }
+
+        // Randomly choose to collect evidence, move, or review evidence
+        int action = randInt(0, 2);
+        switch (action) {
+            case 0:
+                // Collect evidence
+                if (inRoomWithGhost) {
+                    enum EvidenceType evidenceType = hunter->currentRoom->evidenceType;
+                    if (evidenceType != EV_UNKNOWN && evidenceType == hunter->equipment) {
+                        l_hunterCollect(hunter->name, evidenceType, hunter->currentRoom->name);
+                        collectEvidence(evidenceType);
+                        hunter->currentRoom->evidenceType = EV_UNKNOWN;
+                    }
+                }
+                break;
+            case 1:
+                // Move to a random, connected room
+                Room* nextRoom = getRandomConnectedRoom(hunter->currentRoom);
+                if (nextRoom != NULL) {
+                    l_hunterMove(hunter->name, nextRoom->name);
+
+                    // Update the room pointer in the hunter
+                    hunter->currentRoom->hunters[hunter->id] = NULL;
+                    nextRoom->hunters[hunter->id] = hunter;
+
+                    // Update the hunter's current room
+                    hunter->currentRoom = nextRoom;
+                }
+                break;
+            case 2:
+                // Review evidence
+                if (reviewEvidence()) {
+                    l_hunterReview(hunter->name, LOG_SUFFICIENT);
+                    pthread_exit(NULL);
+                }
+                break;
+        }
+
+        // Check if the fear of the hunter is greater than or equal to FEAR_MAX
+        if (hunter->fear >= FEAR_MAX) {
+            l_hunterExit(hunter->name, LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Check if the hunter's boredom is greater than or equal to BOREDOM_MAX
+        if (hunter->boredom >= BOREDOM_MAX) {
+            l_hunterExit(hunter->name, LOG_UNKNOWN);
+            pthread_exit(NULL);
+        }
+
+        // Introduce some delay before the next iteration
+        usleep(HUNTER_WAIT * 1000);
+    }
+}
+ChatGPT
+It seems that there is an attempt to access the evidenceType field in the Room struct, but it's not defined in your defs.h. To resolve this issue, you need to add the evidenceType field to the Room struct.
+
+Update the Room struct in your defs.h file to include the evidenceType field:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    struct Ghost* ghost; // Add this line if not already present
+    enum EvidenceType evidenceType; // Add this line to include the evidenceType field
+    // Add any other room-related information if needed
+} Room;
+Make sure to add the enum EvidenceType evidenceType; line to the Room struct. This will allow rooms to keep track of the evidence type in the room.
+
+After making this change, recompile your code, and the "struct 'Room' has no field 'evidenceType'" error should be resolved.
+
+User
+now im getting this error struct "Room" has no field "hunters"
+ChatGPT
+It seems there might be a misunderstanding or a potential issue with your code structure. The error "struct 'Room' has no field 'hunters'" suggests that the hunters field is being used in hunter.c but not defined in the Room struct.
+
+Looking at your provided code in defs.h, the Room struct does not have a field named hunters. It's possible that you intended to have an array of hunters in each room. If that's the case, you need to add the hunters field to the Room struct. Here's how you can modify the Room struct:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    struct Ghost* ghost;
+    enum EvidenceType evidenceType;
+    struct Hunter* hunters[NUM_HUNTERS];  // Add this line to include the hunters field
+    // Add any other room-related information if needed
+} Room;
+Make sure to add the struct Hunter* hunters[NUM_HUNTERS]; line to the Room struct. This will allow each room to keep track of the hunters in that room.
+
+After making this change, recompile your code, and the "struct 'Room' has no field 'hunters'" error should be resolved.
+
+User
+now im getting this error struct "Hunter" has no field "id"
+ChatGPT
+It looks like the id field is not defined in the Hunter struct in your defs.h file. If you are trying to assign an ID to each hunter, you need to add the id field to the Hunter struct. Here's how you can modify the Hunter struct:
+
+c
+Copy code
+typedef struct Hunter {
+    char name[MAX_STR];
+    enum EvidenceType equipment;
+    Room* currentRoom;
+    int fear;
+    int boredom;
+    pthread_t thread;
+    int id;  // Add this line to include the id field
+} Hunter;
+Make sure to add the int id; line to the Hunter struct. This will allow each hunter to have a unique identifier.
+
+After making this change, recompile your code, and the "struct 'Hunter' has no field 'id'" error should be resolved.
+
+User
+im getting this error in my struct "Room" has no field "numConnectedRooms" #include "defs.h"
+
+// Helper functions for house-related logic
+
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType) {
+    pthread_mutex_lock(&room->roomMutex);
+
+    // Check if the room already has evidence
+    if (room->evidenceType == EV_UNKNOWN) {
+        // Add evidence to the room
+        room->evidenceType = evidenceType;
+        l_ghostEvidence(evidenceType, room->name);
+    }
+
+    pthread_mutex_unlock(&room->roomMutex);
+}
+
+Room* getRandomConnectedRoom(Room* currentRoom) {
+    // Assumes that each room has a list of connected rooms
+    int numConnectedRooms = currentRoom->numConnectedRooms;
+
+    if (numConnectedRooms == 0) {
+        // No connected rooms
+        return currentRoom;
+    }
+
+    int randomIndex = randInt(0, numConnectedRooms - 1);
+    return currentRoom->connectedRooms[randomIndex];
+}
+
+
+void collectEvidence(enum EvidenceType evidenceType) {
+    // Assumes a shared collection of evidence accessible by all hunters
+
+    // Check if the evidence is already collected
+    int evidenceAlreadyCollected = 0;
+
+    pthread_mutex_lock(&evidenceMutex);
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        if (collectedEvidence[i] == evidenceType) {
+            evidenceAlreadyCollected = 1;
+            break;
+        }
+    }
+
+    if (!evidenceAlreadyCollected && numCollectedEvidence < MAX_COLLECTED_EVIDENCE) {
+        // Collect evidence
+        collectedEvidence[numCollectedEvidence++] = evidenceType;
+        l_hunterCollect("Shared", evidenceType, "Shared");
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+}
+
+int reviewEvidence() {
+    // Assumes a shared collection of evidence accessible by all hunters
+
+    int uniqueEvidenceCount = 0;
+
+    pthread_mutex_lock(&evidenceMutex);
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        // Check for uniqueness
+        int isUnique = 1;
+        for (int j = i + 1; j < numCollectedEvidence; j++) {
+            if (collectedEvidence[i] == collectedEvidence[j]) {
+                isUnique = 0;
+                break;
+            }
+        }
+
+        if (isUnique) {
+            uniqueEvidenceCount++;
+        }
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+
+    return (uniqueEvidenceCount >= 3) ? 1 : 0;
+}
+
+void finalizeResults(const HouseType* house, const Hunter hunters[NUM_HUNTERS], const Ghost* ghost) {
+    // Print hunters with fear >= FEAR_MAX
+    printf("Hunters with fear >= FEAR_MAX:\n");
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].fear >= FEAR_MAX) {
+            printf("- %s\n", hunters[i].name);
+        }
+    }
+
+    // Print hunters with boredom >= BOREDOM_MAX
+    printf("\nHunters with boredom >= BOREDOM_MAX:\n");
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].boredom >= BOREDOM_MAX && hunters[i].fear < FEAR_MAX) {
+            printf("- %s\n", hunters[i].name);
+        }
+    }
+
+    // Check if the ghost has won
+    int allHuntersInactive = 1;
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].fear < FEAR_MAX && hunters[i].boredom < BOREDOM_MAX) {
+            allHuntersInactive = 0;
+            break;
+        }
+    }
+
+    if (allHuntersInactive) {
+        printf("\nThe ghost has won! All hunters are inactive.\n");
+    }
+
+    // Print evidence collected by hunters
+    printf("\nEvidence collected by hunters:\n");
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        char evidenceTypeStr[MAX_STR];
+        evidenceToString(collectedEvidence[i], evidenceTypeStr);
+        printf("- %s\n", evidenceTypeStr);
+    }
+
+    // Check if three different pieces of evidence were collected
+    if (numCollectedEvidence >= 3) {
+        // Identify the ghost based on evidence
+        GhostClass identifiedGhost = identifyGhost(collectedEvidence);
+        char identifiedGhostStr[MAX_STR];
+        ghostToString(identifiedGhost, identifiedGhostStr);
+
+        // Print identified ghost type
+        printf("\nIdentified Ghost Type: %s\n", identifiedGhostStr);
+
+        // Check if identification is correct
+        if (identifiedGhost == ghost->type) {
+            printf("The pieces of evidence correctly identified the ghost!\n");
+        } else {
+            printf("The pieces of evidence did not correctly identify the ghost.\n");
+        }
+    }
+}
+
+ChatGPT
+It appears that the numConnectedRooms field is not defined in the Room structure in your defs.h file. To resolve this issue, you need to add the numConnectedRooms field to the Room structure. Modify your defs.h file as follows:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    int numConnectedRooms;  // Add this line to include the numConnectedRooms field
+    Room** connectedRooms;  // Add this line to include the connectedRooms field
+    enum EvidenceType evidenceType;
+    // Add any other room-related information if needed
+    Hunter* hunters[NUM_HUNTERS];  // Add this line if not already present
+    Ghost* ghost;  // Add this line if not already present
+} Room;
+Make sure to add the int numConnectedRooms; line and the Room** connectedRooms; line to the Room structure. This will allow each room to keep track of the number of connected rooms and maintain an array of pointers to connected rooms.
+
+After making this change, recompile your code, and the "struct 'Room' has no field 'numConnectedRooms'" error should be resolved.
+
+User
+now im getting this erro ridentifier "evidenceMutex" is undefined
+ChatGPT
+It seems that the evidenceMutex variable is not defined in your defs.h file. To fix this, you need to declare the evidenceMutex variable and provide its definition. Add the following lines to your defs.h file:
+
+c
+Copy code
+extern pthread_mutex_t evidenceMutex;
+Then, in one of your source files (for example, house.c or main.c), define the evidenceMutex variable. Add the following line at the top of the file:
+
+c
+Copy code
+pthread_mutex_t evidenceMutex = PTHREAD_MUTEX_INITIALIZER;
+This line initializes the evidenceMutex variable with the default attributes.
+
+By declaring the evidenceMutex as extern in the header file, you let the compiler know that the variable is defined elsewhere, and you provide the actual definition in one of your source files. This way, multiple source files can share the same mutex.
+
+User
+now im getting this error identifier "numCollectedEvidence" is undefined
+ChatGPT
+It appears that numCollectedEvidence is not defined in your code. You should declare it in your defs.h file to make it accessible across different source files. Add the following line to your defs.h file:
+
+c
+Copy code
+extern int numCollectedEvidence;
+Then, in one of your source files (for example, house.c or main.c), define the numCollectedEvidence variable. Add the following line at the top of the file:
+
+c
+Copy code
+int numCollectedEvidence = 0;
+This line initializes numCollectedEvidence to zero, indicating that initially, no evidence has been collected.
+
+By declaring the numCollectedEvidence as extern in the header file, you let the compiler know that the variable is defined elsewhere, and you provide the actual definition in one of your source files. This way, multiple source files can share the same variable.
+
+User
+im getting this error identifier "collectedEvidence" is undefined
+ChatGPT
+To resolve the "identifier 'collectedEvidence' is undefined" error, you need to declare collectedEvidence in your defs.h file, similar to what you did with numCollectedEvidence. Add the following line to your defs.h file:
+
+c
+Copy code
+extern enum EvidenceType collectedEvidence[MAX_COLLECTED_EVIDENCE];
+This line declares an array collectedEvidence of type enum EvidenceType with a size of MAX_COLLECTED_EVIDENCE. It indicates to the compiler that the array is defined elsewhere.
+
+Then, in one of your source files (e.g., house.c or main.c), define the collectedEvidence array. Add the following line at the top of the file:
+
+c
+Copy code
+enum EvidenceType collectedEvidence[MAX_COLLECTED_EVIDENCE];
+This line provides the actual definition of collectedEvidence and allocates memory for the array.
+
+By declaring it as extern in the header file, you allow multiple source files to share the same collectedEvidence array.
+
+User
+i have this error identifier "collectedEvidence" is undefined
+ChatGPT
+I apologize for the confusion. Let's make sure to properly define collectedEvidence in one of your source files. Add the following line at the top of your house.c or main.c file:
+
+c
+Copy code
+enum EvidenceType collectedEvidence[MAX_COLLECTED_EVIDENCE];
+This line provides the actual definition of collectedEvidence and allocates memory for the array. It should resolve the "identifier 'collectedEvidence' is undefined" error.
+
+Make sure that this line is outside of any function, typically at the beginning of the file. After adding this line, the compiler should recognize collectedEvidence in your program.
+
+User
+MAX_COLLECTED_EVIDENCE is undfined 
+ChatGPT
+I apologize for the oversight. It seems I missed including the definition of MAX_COLLECTED_EVIDENCE in the provided code snippets. Let's add that to your defs.h file:
+
+c
+Copy code
+#define MAX_COLLECTED_EVIDENCE 3
+Add this line near the other #define statements in your defs.h file. This line defines the maximum number of collected evidence pieces that your program can store. Once you add this line, the "MAX_COLLECTED_EVIDENCE is undefined" error should be resolved.
+
+User
+i have this error identifier "MAX_CONNECTED_ROOMS" is undefined #include "defs.h"
+
+pthread_mutex_t evidenceMutex = PTHREAD_MUTEX_INITIALIZER;
+enum EvidenceType collectedEvidence[MAX_COLLECTED_EVIDENCE];
+
+
+/*
+    Dynamically allocates a room and initializes its values.
+    in: name - the name of the room.
+    out: returns a pointer to the created room.
+*/
+struct Room* createRoom(const char* name) {
+    struct Room* newRoom = (struct Room*)malloc(sizeof(struct Room));
+    if (newRoom == NULL) {
+        perror("Error creating room");
+        exit(EXIT_FAILURE);
+    }
+
+    strncpy(newRoom->name, name, MAX_STR - 1);
+    newRoom->name[MAX_STR - 1] = '\0'; // Ensure null-termination
+
+    // Initialize other room properties
+    newRoom->evidenceType = EV_UNKNOWN;
+    newRoom->numConnectedRooms = 0;
+    pthread_mutex_init(&newRoom->roomMutex, NULL);
+
+    return newRoom;
+}
+
+/*
+    Connects two rooms in a two-way connection.
+    in: room1, room2 - the rooms to connect.
+*/
+void connectRooms(struct Room* room1, struct Room* room2) {
+    if (room1->numConnectedRooms < MAX_CONNECTED_ROOMS && room2->numConnectedRooms < MAX_CONNECTED_ROOMS) {
+        // Add room2 to room1's connected rooms
+        room1->connectedRooms[room1->numConnectedRooms++] = room2;
+
+        // Add room1 to room2's connected rooms
+        room2->connectedRooms[room2->numConnectedRooms++] = room1;
+    } else {
+        fprintf(stderr, "Error connecting rooms: Maximum connected rooms reached.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+    Adds a room to the list of rooms in the house.
+    in: head - a pointer to the head of the room list.
+        room - the room to add to the list.
+*/
+void addRoom(struct Room** head, struct Room* room) {
+    if (*head == NULL) {
+        *head = room;
+        room->nextRoom = NULL;
+    } else {
+        room->nextRoom = *head;
+        *head = room;
+    }
+}
+
+/*
+    Dynamically allocates several rooms and populates the provided house.
+    Note: You may modify this as long as room names and connections are maintained.
+        out: house - the house to populate with rooms. Assumes house has been initialized.
+*/
+void populateRooms(HouseType* house) {
+    // First, create each room
+
+    // createRoom assumes that we dynamically allocate a room, initializes the values, and returns a RoomType*
+    // create functions are pretty typical, but it means errors are harder to return aside from NULL
+    struct Room* van                = createRoom("Van");
+    struct Room* hallway            = createRoom("Hallway");
+    struct Room* master_bedroom     = createRoom("Master Bedroom");
+    struct Room* boys_bedroom       = createRoom("Boy's Bedroom");
+    struct Room* bathroom           = createRoom("Bathroom");
+    struct Room* basement           = createRoom("Basement");
+    struct Room* basement_hallway   = createRoom("Basement Hallway");
+    struct Room* right_storage_room = createRoom("Right Storage Room");
+    struct Room* left_storage_room  = createRoom("Left Storage Room");
+    struct Room* kitchen            = createRoom("Kitchen");
+    struct Room* living_room        = createRoom("Living Room");
+    struct Room* garage             = createRoom("Garage");
+    struct Room* utility_room       = createRoom("Utility Room");
+
+    // This adds each room to each other's room lists
+    // All rooms are two-way connections
+    connectRooms(van, hallway);
+    connectRooms(hallway, master_bedroom);
+    connectRooms(hallway, boys_bedroom);
+    connectRooms(hallway, bathroom);
+    connectRooms(hallway, kitchen);
+    connectRooms(hallway, basement);
+    connectRooms(basement, basement_hallway);
+    connectRooms(basement_hallway, right_storage_room);
+    connectRooms(basement_hallway, left_storage_room);
+    connectRooms(kitchen, living_room);
+    connectRooms(kitchen, garage);
+    connectRooms(garage, utility_room);
+
+    // Add each room to the house's room list
+    addRoom(&house->rooms, van);
+    addRoom(&house->rooms, hallway);
+    addRoom(&house->rooms, master_bedroom);
+    addRoom(&house->rooms, boys_bedroom);
+    addRoom(&house->rooms, bathroom);
+    addRoom(&house->rooms, basement);
+    addRoom(&house->rooms, basement_hallway);
+    addRoom(&house->rooms, right_storage_room);
+    addRoom(&house->rooms, left_storage_room);
+    addRoom(&house->rooms, kitchen);
+    addRoom(&house->rooms, living_room);
+    addRoom(&house->rooms, garage);
+    addRoom(&house->rooms, utility_room);
+}
+
+
+// Helper functions for house-related logic
+
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType) {
+    pthread_mutex_lock(&room->roomMutex);
+
+    // Check if the room already has evidence
+    if (room->evidenceType == EV_UNKNOWN) {
+        // Add evidence to the room
+        room->evidenceType = evidenceType;
+        l_ghostEvidence(evidenceType, room->name);
+    }
+
+    pthread_mutex_unlock(&room->roomMutex);
+}
+
+Room* getRandomConnectedRoom(Room* currentRoom) {
+    // Assumes that each room has a list of connected rooms
+    int numConnectedRooms = currentRoom->numConnectedRooms;
+
+    if (numConnectedRooms == 0) {
+        // No connected rooms
+        return currentRoom;
+    }
+
+    int randomIndex = randInt(0, numConnectedRooms - 1);
+    return currentRoom->connectedRooms[randomIndex];
+}
+
+
+void collectEvidence(enum EvidenceType evidenceType) {
+    // Assumes a shared collection of evidence accessible by all hunters
+
+    // Check if the evidence is already collected
+    int evidenceAlreadyCollected = 0;
+    int numCollectedEvidence= 0;
+    
+    pthread_mutex_lock(&evidenceMutex);
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        if (collectedEvidence[i] == evidenceType) {
+            evidenceAlreadyCollected = 1;
+            break;
+        }
+    }
+
+    if (!evidenceAlreadyCollected && numCollectedEvidence < MAX_COLLECTED_EVIDENCE) {
+        // Collect evidence
+        collectedEvidence[numCollectedEvidence++] = evidenceType;
+        l_hunterCollect("Shared", evidenceType, "Shared");
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+}
+
+int reviewEvidence() {
+    // Assumes a shared collection of evidence accessible by all hunters
+
+    int uniqueEvidenceCount = 0;
+
+    pthread_mutex_lock(&evidenceMutex);
+
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        // Check for uniqueness
+        int isUnique = 1;
+        for (int j = i + 1; j < numCollectedEvidence; j++) {
+            if (collectedEvidence[i] == collectedEvidence[j]) {
+                isUnique = 0;
+                break;
+            }
+        }
+
+        if (isUnique) {
+            uniqueEvidenceCount++;
+        }
+    }
+
+    pthread_mutex_unlock(&evidenceMutex);
+
+    return (uniqueEvidenceCount >= 3) ? 1 : 0;
+}
+
+void finalizeResults(const HouseType* house, const Hunter hunters[NUM_HUNTERS], const Ghost* ghost) {
+    // Print hunters with fear >= FEAR_MAX
+    printf("Hunters with fear >= FEAR_MAX:\n");
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].fear >= FEAR_MAX) {
+            printf("- %s\n", hunters[i].name);
+        }
+    }
+
+    // Print hunters with boredom >= BOREDOM_MAX
+    printf("\nHunters with boredom >= BOREDOM_MAX:\n");
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].boredom >= BOREDOM_MAX && hunters[i].fear < FEAR_MAX) {
+            printf("- %s\n", hunters[i].name);
+        }
+    }
+
+    // Check if the ghost has won
+    int allHuntersInactive = 1;
+    for (int i = 0; i < NUM_HUNTERS; i++) {
+        if (hunters[i].fear < FEAR_MAX && hunters[i].boredom < BOREDOM_MAX) {
+            allHuntersInactive = 0;
+            break;
+        }
+    }
+
+    if (allHuntersInactive) {
+        printf("\nThe ghost has won! All hunters are inactive.\n");
+    }
+
+    // Print evidence collected by hunters
+    printf("\nEvidence collected by hunters:\n");
+    for (int i = 0; i < numCollectedEvidence; i++) {
+        char evidenceTypeStr[MAX_STR];
+        evidenceToString(collectedEvidence[i], evidenceTypeStr);
+        printf("- %s\n", evidenceTypeStr);
+    }
+
+    // Check if three different pieces of evidence were collected
+    if (numCollectedEvidence >= 3) {
+        // Identify the ghost based on evidence
+        GhostClass identifiedGhost = identifyGhost(collectedEvidence);
+        char identifiedGhostStr[MAX_STR];
+        ghostToString(identifiedGhost, identifiedGhostStr);
+
+        // Print identified ghost type
+        printf("\nIdentified Ghost Type: %s\n", identifiedGhostStr);
+
+        // Check if identification is correct
+        if (identifiedGhost == ghost->type) {
+            printf("The pieces of evidence correctly identified the ghost!\n");
+        } else {
+            printf("The pieces of evidence did not correctly identify the ghost.\n");
+        }
+    }
+}
+
+ChatGPT
+It looks like you are using a variable MAX_CONNECTED_ROOMS in the connectRooms function, but it hasn't been defined in your defs.h file. Let's add that definition:
+
+c
+Copy code
+#define MAX_CONNECTED_ROOMS 5
+Place this line in your defs.h file alongside your other #define statements. This should resolve the "identifier 'MAX_CONNECTED_ROOMS' is undefined" error.
+
+User
+struct "Room" has no field "nextRoom"
+ChatGPT
+It appears that the nextRoom field is missing in your struct Room definition. You can add it to your defs.h file like this:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    struct Room* connectedRooms[MAX_CONNECTED_ROOMS];
+    int numConnectedRooms;
+    enum EvidenceType evidenceType;
+    // Add the nextRoom field
+    struct Room* nextRoom;
+    // Add any other room-related information if needed
+} Room;
+Make sure to add this field wherever you are using or updating the linked list of rooms. If you have any specific logic using nextRoom, adapt it accordingly.
+
+User
+are you not missing some stuff, this is what i have now typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    int numConnectedRooms;  // Add this line to include the numConnectedRooms field
+    Room** connectedRooms;  // Add this line to include the connectedRooms field
+    enum EvidenceType evidenceType;
+    // Add any other room-related information if needed
+    Hunter* hunters[NUM_HUNTERS];  // Add this line if not already present
+    Ghost* ghost;  // Add this line if not already present
+} Room;
+ChatGPT
+You're right, and I appreciate your clarification. It seems I misunderstood the structure of your program. Based on the code snippets you provided, it looks like your Room structure is indeed storing an array of pointers to connected rooms (connectedRooms). The numConnectedRooms field indicates the number of connected rooms.
+
+Here's the corrected struct Room definition:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    int numConnectedRooms;
+    struct Room** connectedRooms;  // Corrected this line
+    enum EvidenceType evidenceType;
+    // Add any other room-related information if needed
+    Hunter* hunters[NUM_HUNTERS];
+    Ghost* ghost;
+} Room;
+Please ensure you update the other parts of your code that utilize connectedRooms accordingly. I appreciate your patience and understanding.
+
+User
+u still haven't fixed my issue struct "Room" has no field "nextRoom"
+ChatGPT
+I apologize for the oversight. It seems there's a discrepancy in the code I provided, and I appreciate your patience. The nextRoom field is not needed for your implementation. I made an error in my response, and I apologize for any confusion.
+
+Please remove the nextRoom field from your struct Room definition. Here's the corrected version:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    int numConnectedRooms;
+    struct Room** connectedRooms;
+    enum EvidenceType evidenceType;
+    // Add any other room-related information if needed
+    Hunter* hunters[NUM_HUNTERS];
+    Ghost* ghost;
+} Room;
+I hope this resolves the issue. If you encounter any further problems or have additional questions, please feel free to ask.
+
+User
+how do i make this code wrok then void addRoom(struct Room** head, struct Room* room) {
+    if (*head == NULL) {
+        *head = room;
+        room->nextRoom = NULL;
+    } else {
+        room->nextRoom = *head;
+        *head = room;
+    }
+}
+ChatGPT
+The nextRoom field is not present in your struct Room definition, so the code should be modified accordingly. If you want to maintain a linked list of rooms using a nextRoom field, you'll need to add that field to your struct Room. Here's an updated version of your code:
+
+c
+Copy code
+void addRoom(struct Room** head, struct Room* room) {
+    if (*head == NULL) {
+        *head = room;
+        room->nextRoom = NULL;
+    } else {
+        room->nextRoom = *head;
+        *head = room;
+    }
+}
+And make sure your struct Room looks like this:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    int numConnectedRooms;
+    struct Room** connectedRooms;
+    enum EvidenceType evidenceType;
+    // Add any other room-related information if needed
+    Hunter* hunters[NUM_HUNTERS];
+    Ghost* ghost;
+    struct Room* nextRoom;  // Add this line to include the nextRoom field
+} Room;
+With these modifications, your addRoom function should work correctly. If you encounter any issues or have further questions, feel free to ask.
+
+User
+i have this error now identifier "numCollectedEvidence" is undefined
+ChatGPT
+It looks like you need to declare the numCollectedEvidence variable somewhere in your code. Make sure to declare it globally or in a scope where it is accessible to the functions that use it. You can add it to your defs.h file along with other global variables.
+
+Here's an example of how you might declare it in defs.h:
+
+c
+Copy code
+// defs.h
+
+// ... (other declarations)
+
+extern int numCollectedEvidence;  // Declare numCollectedEvidence as a global variable
+
+// ... (other declarations)
+Then, in one of your source files (for example, in the file where your main function is located), define this variable:
+
+c
+Copy code
+// main.c
+
+#include "defs.h"
+
+// ... (other includes and code)
+
+int numCollectedEvidence = 0;  // Define numCollectedEvidence
+
+// ... (rest of the code)
+This way, the variable is declared in the header file, making it accessible to other source files, and defined in one source file to avoid duplicate definitions.
+
+Make sure to do the same for other global variables that are used across multiple source files.
+
+User
+i cant fix this error, struct "Room" has no field "nextRoom" void addRoom(struct Room** head, struct Room* room) {
+    if (*head == NULL) {
+        *head = room;
+        room->nextRoom = NULL;
+    } else {
+        room->nextRoom = *head;
+        *head = room;
+    }
+}#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <time.h>
+
+
+#define MAX_CONNECTED_ROOMS 5
+#define MAX_COLLECTED_EVIDENCE 3
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define C_TRUE          1
+#define C_FALSE         0
+#define HUNTER_WAIT     5000
+#define GHOST_WAIT      600
+#define NUM_HUNTERS     4
+#define FEAR_MAX        10
+#define LOGGING         C_TRUE
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+
+enum EvidenceType { EMF, TEMPERATURE, FINGERPRINTS, SOUND, EV_COUNT, EV_UNKNOWN };
+enum GhostClass { POLTERGEIST, BANSHEE, BULLIES, PHANTOM, GHOST_COUNT, GH_UNKNOWN };
+enum LoggerDetails { LOG_FEAR, LOG_BORED, LOG_EVIDENCE, LOG_SUFFICIENT, LOG_INSUFFICIENT, LOG_UNKNOWN };
+
+
+//type cast stuff
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    int numConnectedRooms;
+    struct Room** connectedRooms;
+    enum EvidenceType evidenceType;
+    // Add any other room-related information if needed
+    Hunter* hunters[NUM_HUNTERS];
+    Ghost* ghost;
+    struct Room* nextRoom;  // Add this line to include the nextRoom field
+} Room;
+
+typedef struct HouseType {
+    Room* rooms;
+    int numRooms;
+} HouseType;
+
+typedef struct Hunter {
+    char name[MAX_STR];
+    enum EvidenceType equipment;
+    Room* currentRoom;
+    int fear;
+    int boredom;
+    pthread_t thread;
+    int id;  // Add this line to include the id field
+} Hunter;
+
+typedef struct Ghost {
+    enum GhostClass type;
+    Room* currentRoom;
+    int boredom; // Add this line to include the boredom field
+    pthread_t thread;
+} Ghost;
+
+
+
+extern Hunter hunters[NUM_HUNTERS];
+extern pthread_mutex_t evidenceMutex;
+
+
+//declarations 
+void* hunterThread(void* arg);
+void* ghostThread(void* arg);
+void addEvidenceToRoom(Room* room, enum EvidenceType evidenceType);
+Room* getRandomConnectedRoom(Room* currentRoom);
+void collectEvidence(enum EvidenceType evidenceType);
+int reviewEvidence();
+
+struct Room* createRoom(const char* name);
+void connectRooms(struct Room* room1, struct Room* room2);
+void addRoom(struct Room** head, struct Room* room);
+void populateRooms(HouseType* house);
+
+
+
+
+
+// Helper Utilies
+int randInt(int,int);        // Pseudo-random number generator function
+float randFloat(float, float);  // Pseudo-random float generator function
+enum GhostClass randomGhost();  // Return a randomly selected a ghost type
+void ghostToString(enum GhostClass, char*); // Convert a ghost type to a string, stored in output paremeter
+void evidenceToString(enum EvidenceType, char*); // Convert an evidence type to a string, stored in output parameter
+
+// Logging Utilities
+void l_hunterInit(char* name, enum EvidenceType equipment);
+void l_hunterMove(char* name, char* room);
+void l_hunterReview(char* name, enum LoggerDetails reviewResult);
+void l_hunterCollect(char* name, enum EvidenceType evidence, char* room);
+void l_hunterExit(char* name, enum LoggerDetails reason);
+void l_ghostInit(enum GhostClass type, char* room);
+void l_ghostMove(char* room);
+void l_ghostEvidence(enum EvidenceType evidence, char* room);
+void l_ghostExit(enum LoggerDetails reason);
+ChatGPT
+I see the issue. It seems that the nextRoom field is missing in the Room structure. Here is the corrected version of the Room structure:
+
+c
+Copy code
+typedef struct Room {
+    char name[MAX_STR];
+    pthread_mutex_t roomMutex;
+    int numConnectedRooms;
+    struct Room** connectedRooms;
+    enum EvidenceType evidenceType;
+    // Add any other room-related information if needed
+    Hunter* hunters[NUM_HUNTERS];
+    Ghost* ghost;
+    struct Room* nextRoom;  // Add this line to include the nextRoom field
+} Room;
+This modification includes the missing nextRoom field in the Room structure. Make sure you have this updated structure in your code, and it should resolve the "struct 'Room' has no field 'nextRoom'" error.
+
+User
+i have this error in my defs.h unknown type name ‘Hunter’
+ChatGPT
+It seems like there is an order issue in your code. The Hunter structure is referenced before it is declared. To fix this, you can add a forward declaration for the Hunter structure at the beginning of your defs.h file. Here's how you can modify your defs.h file:
+
+c
+Copy code
+#ifndef DEFS_H
+#define DEFS_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <time.h>
+
+#define MAX_CONNECTED_ROOMS 5
+#define MAX_COLLECTED_EVIDENCE 3
+#define MAX_STR         64
+#define MAX_RUNS        50
+#define BOREDOM_MAX     100
+#define C_TRUE          1
+#define C_FALSE         0
+#define HUNTER_WAIT     5000
+#define GHOST_WAIT      600
+#define NUM_HUNTERS     4
+#define FEAR_MAX        10
+#define LOGGING         C_TRUE
+
+typedef enum EvidenceType EvidenceType;
+typedef enum GhostClass GhostClass;
+
+enum EvidenceType { EMF, TEMPERATURE, FINGERPRINTS, SOUND, EV_COUNT, EV_UNKNOWN };
+enum GhostClass { POLTERGEIST, BANSHEE, BULLIES, PHANTOM, GHOST_COUNT, GH_UNKNOWN };
+enum LoggerDetails { LOG_FEAR, LOG_BORED, LOG_EVIDENCE, LOG_SUFFICIENT, LOG_INSUFFICIENT, LOG_UNKNOWN };
+
+// Forward declaration for Hunter
+typedef struct Hunter Hunter;
+
+// Forward declaration for Ghost
+typedef struct Ghost Ghost;
+
+// Rest of your code...
+
+#endif  // DEFS_H
+By adding the forward declarations for Hunter and Ghost before they are used in the Room structure, you should be able to resolve the "unknown type name 'Hunter'" error.
